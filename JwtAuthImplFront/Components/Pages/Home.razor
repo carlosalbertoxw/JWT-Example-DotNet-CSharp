@@ -1,0 +1,21 @@
+@page "/"
+
+<PageTitle>Home</PageTitle>
+
+<h1>JwtAuthImplFront</h1>
+
+<p>Cliente Blazor que consume la <strong>JwtAuthApi</strong> usando autenticación JWT.</p>
+
+<AuthorizeView>
+    <Authorized>
+        <div class="alert alert-success">
+            Sesión iniciada como <strong>@context.User.Identity?.Name</strong>.
+            Roles: @string.Join(", ", context.User.FindAll(ClaimTypes.Role).Select(c => c.Value))
+        </div>
+        <a class="btn btn-primary" href="products">Ir a productos</a>
+    </Authorized>
+    <NotAuthorized>
+        <div class="alert alert-secondary">No has iniciado sesión.</div>
+        <a class="btn btn-primary" href="login">Iniciar sesión</a>
+    </NotAuthorized>
+</AuthorizeView>

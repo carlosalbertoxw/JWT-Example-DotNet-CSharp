@@ -1,0 +1,8 @@
+<Router AppAssembly="typeof(Program).Assembly">
+    <Found Context="routeData">
+        @* La autorización se aplica del lado cliente dentro de cada página
+           protegida (modelo de token en localStorage), no a nivel de ruta/servidor. *@
+        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>

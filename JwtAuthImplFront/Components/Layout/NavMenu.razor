@@ -1,0 +1,65 @@
+@inject AuthApiClient AuthApi
+@inject JwtAuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">JwtAuthImplFront</a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="catalog">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Catálogo público
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="products">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Productos
+            </NavLink>
+        </div>
+
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-item px-3">
+                    <span class="nav-link">
+                        <span class="bi bi-person-fill-nav-menu" aria-hidden="true"></span>
+                        @context.User.Identity?.Name
+                    </span>
+                </div>
+                <div class="nav-item px-3">
+                    <button class="nav-link btn btn-link text-start" @onclick="LogoutAsync">
+                        <span class="bi bi-arrow-bar-left-nav-menu" aria-hidden="true"></span> Cerrar sesión
+                    </button>
+                </div>
+            </Authorized>
+            <NotAuthorized>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="login">
+                        <span class="bi bi-lock-nav-menu" aria-hidden="true"></span> Iniciar sesión
+                    </NavLink>
+                </div>
+            </NotAuthorized>
+        </AuthorizeView>
+    </nav>
+</div>
+
+@code {
+    private async Task LogoutAsync()
+    {
+        await AuthApi.LogoutAsync();
+        await AuthStateProvider.NotifyAuthenticationChangedAsync();
+        Navigation.NavigateTo("");
+    }
+}

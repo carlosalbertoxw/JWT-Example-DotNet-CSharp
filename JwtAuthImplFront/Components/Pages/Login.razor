@@ -1,0 +1,86 @@
+@page "/login"
+@inject AuthApiClient AuthApi
+@inject JwtAuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+
+<PageTitle>Iniciar sesión</PageTitle>
+
+<h1>Iniciar sesión</h1>
+
+<div class="row">
+    <div class="col-md-5">
+        <EditForm Model="_model" OnValidSubmit="HandleLoginAsync" FormName="login">
+            <DataAnnotationsValidator />
+
+            <div class="mb-3">
+                <label class="form-label">Usuario</label>
+                <InputText class="form-control" @bind-Value="_model.Username" autocomplete="username" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Contraseña</label>
+                <InputText type="password" class="form-control" @bind-Value="_model.Password" autocomplete="current-password" />
+            </div>
+
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <div class="alert alert-danger py-2">@_error</div>
+            }
+
+            <button type="submit" class="btn btn-primary" disabled="@_loading">
+                @(_loading ? "Ingresando..." : "Ingresar")
+            </button>
+        </EditForm>
+
+        <hr />
+        <p class="text-muted mb-0">
+            <small>Usuarios de ejemplo: <code>admin / Admin123!</code> &middot; <code>user / User123!</code></small>
+        </p>
+    </div>
+</div>
+
+@code {
+    private readonly LoginModel _model = new();
+    private bool _loading;
+    private string? _error;
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    private async Task HandleLoginAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            bool ok = await AuthApi.LoginAsync(_model.Username, _model.Password);
+            if (!ok)
+            {
+                _error = "Usuario o contraseña inválidos.";
+                return;
+            }
+
+            // Notifica a la app que el usuario cambió y navega a destino.
+            await AuthStateProvider.NotifyAuthenticationChangedAsync();
+            Navigation.NavigateTo(string.IsNullOrEmpty(ReturnUrl) ? "products" : ReturnUrl);
+        }
+        catch (Exception ex)
+        {
+            _error = $"No se pudo contactar la API: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private sealed class LoginModel
+    {
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "El usuario es obligatorio.")]
+        public string Username { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "La contraseña es obligatoria.")]
+        public string Password { get; set; } = string.Empty;
+    }
+}

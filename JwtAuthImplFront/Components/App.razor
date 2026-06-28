@@ -1,0 +1,28 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="stylesheet" href="bootstrap/bootstrap.min.css" />
+    <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="JwtAuthImplFront.styles.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <HeadOutlet @rendermode="@InteractiveServerNoPrerender" />
+</head>
+
+<body>
+    <Routes @rendermode="@InteractiveServerNoPrerender" />
+    <script src="_framework/blazor.web.js"></script>
+</body>
+
+</html>
+
+@code {
+    // Se desactiva el prerenderizado porque la autenticación depende de
+    // ProtectedLocalStorage, que solo está disponible una vez establecido el
+    // circuito interactivo (requiere JS interop).
+    private static readonly IComponentRenderMode InteractiveServerNoPrerender =
+        new InteractiveServerRenderMode(prerender: false);
+}

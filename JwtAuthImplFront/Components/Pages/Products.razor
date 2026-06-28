@@ -1,0 +1,108 @@
+@page "/products"
+@inject AuthApiClient AuthApi
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Navigation
+
+<PageTitle>Productos</PageTitle>
+
+<h1>Productos</h1>
+
+<p>Esta página está protegida (solo usuarios autenticados) y consume los endpoints de la JwtAuthApi.</p>
+
+@if (_checkingAuth)
+{
+    <p><em>Verificando sesión...</em></p>
+}
+else
+{
+    @if (_loading)
+    {
+        <p><em>Cargando...</em></p>
+    }
+    else if (_products is null)
+    {
+        <div class="alert alert-warning">No se pudo obtener el listado (¿la API está en ejecución?).</div>
+    }
+    else
+    {
+        <p>@_products.Message</p>
+        <ul>
+            @foreach (var item in _products.Items)
+            {
+                <li>@item</li>
+            }
+        </ul>
+    }
+
+    <hr />
+
+    <AuthorizeView Roles="Admin">
+        <Authorized>
+            <h4>Crear producto (solo Admin)</h4>
+            <div class="input-group mb-2" style="max-width: 420px;">
+                <input class="form-control" placeholder="Nombre del producto" @bind="_newProduct" />
+                <button class="btn btn-primary" @onclick="CreateProductAsync" disabled="@_creating">Crear</button>
+            </div>
+        </Authorized>
+        <NotAuthorized>
+            <p class="text-muted"><small>Inicia sesión como <code>admin</code> para crear productos.</small></p>
+        </NotAuthorized>
+    </AuthorizeView>
+
+    @if (!string.IsNullOrEmpty(_createMessage))
+    {
+        <div class="alert alert-info py-2">@_createMessage</div>
+    }
+}
+
+@code {
+    private ProductsResponse? _products;
+    private bool _checkingAuth = true;
+    private bool _loading = true;
+    private string _newProduct = string.Empty;
+    private bool _creating;
+    private string? _createMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // La autorización se hace en el cliente: este código corre dentro del
+        // circuito interactivo, donde sí hay acceso al token (ProtectedLocalStorage).
+        var state = await AuthState.GetAuthenticationStateAsync();
+        if (state.User.Identity?.IsAuthenticated != true)
+        {
+            Navigation.NavigateTo("login?returnUrl=products");
+            return;
+        }
+
+        _checkingAuth = false;
+        await LoadProductsAsync();
+    }
+
+    private async Task LoadProductsAsync()
+    {
+        _loading = true;
+        _products = await AuthApi.GetProductsAsync();
+        _loading = false;
+    }
+
+    private async Task CreateProductAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newProduct))
+            return;
+
+        _creating = true;
+        _createMessage = null;
+
+        var status = await AuthApi.CreateProductAsync(_newProduct);
+        _createMessage = status switch
+        {
+            System.Net.HttpStatusCode.Created => $"Producto '{_newProduct}' creado correctamente.",
+            System.Net.HttpStatusCode.Forbidden => "No tienes permisos (rol Admin requerido).",
+            System.Net.HttpStatusCode.Unauthorized => "Sesión expirada. Vuelve a iniciar sesión.",
+            _ => $"Respuesta inesperada de la API: {(int)status}."
+        };
+
+        _newProduct = string.Empty;
+        _creating = false;
+    }
+}

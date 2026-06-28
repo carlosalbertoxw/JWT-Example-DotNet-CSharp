@@ -1,0 +1,49 @@
+@page "/catalog"
+@inject AuthApiClient AuthApi
+
+<PageTitle>Catálogo público</PageTitle>
+
+<h1>Catálogo público</h1>
+
+<p>Esta página consume el endpoint <code>GET /api/products/public</code>, que es
+<strong>anónimo</strong>: no requiere iniciar sesión.</p>
+
+@if (_loading)
+{
+    <p><em>Cargando...</em></p>
+}
+else if (_products is null)
+{
+    <div class="alert alert-warning">No se pudo obtener el catálogo (¿la API está en ejecución?).</div>
+}
+else
+{
+    <p>@_products.Message</p>
+    <ul>
+        @foreach (var item in _products.Items)
+        {
+            <li>@item</li>
+        }
+    </ul>
+}
+
+@code {
+    private ProductsResponse? _products;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _products = await AuthApi.GetPublicProductsAsync();
+        }
+        catch
+        {
+            _products = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

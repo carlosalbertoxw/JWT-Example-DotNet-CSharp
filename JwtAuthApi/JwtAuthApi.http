@@ -1,0 +1,49 @@
+@JwtAuthApi_HostAddress = http://localhost:5274
+
+### Endpoint público (sin token)
+GET {{JwtAuthApi_HostAddress}}/api/products/public
+Accept: application/json
+
+### Login -> devuelve accessToken y refreshToken
+# @name login
+POST {{JwtAuthApi_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "Admin123!"
+}
+
+### Endpoint protegido usando el access token del login
+GET {{JwtAuthApi_HostAddress}}/api/products
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### Usuario autenticado (claims del token)
+GET {{JwtAuthApi_HostAddress}}/api/auth/me
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### Crear producto (solo rol Admin)
+POST {{JwtAuthApi_HostAddress}}/api/products
+Authorization: Bearer {{login.response.body.accessToken}}
+Content-Type: application/json
+
+"Tablet"
+
+### Refresh -> rota el par de tokens
+POST {{JwtAuthApi_HostAddress}}/api/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{login.response.body.refreshToken}}"
+}
+
+### Logout -> revoca el refresh token
+POST {{JwtAuthApi_HostAddress}}/api/auth/logout
+Authorization: Bearer {{login.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "refreshToken": "{{login.response.body.refreshToken}}"
+}
+
+###
