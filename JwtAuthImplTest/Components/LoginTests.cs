@@ -27,7 +27,7 @@ namespace JwtAuthImplTest.Components
                 BaseAddress = new Uri("http://localhost/")
             };
 
-            var api = new AuthApiClient(http, store);
+            var api = new AuthApiClient(http, store, new RefreshCoordinator());
             ctx.Services.AddSingleton(api);
             ctx.Services.AddSingleton(new JwtAuthenticationStateProvider(store, api));
             return ctx;

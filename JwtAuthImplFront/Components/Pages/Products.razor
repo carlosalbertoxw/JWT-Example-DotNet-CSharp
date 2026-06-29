@@ -1,5 +1,5 @@
 @page "/products"
-@inject AuthApiClient AuthApi
+@inject ProductsApiClient ProductsApi
 @inject AuthenticationStateProvider AuthState
 @inject NavigationManager Navigation
 
@@ -81,7 +81,7 @@ else
     private async Task LoadProductsAsync()
     {
         _loading = true;
-        _products = await AuthApi.GetProductsAsync();
+        _products = await ProductsApi.GetProductsAsync();
         _loading = false;
     }
 
@@ -93,7 +93,7 @@ else
         _creating = true;
         _createMessage = null;
 
-        var status = await AuthApi.CreateProductAsync(_newProduct);
+        var status = await ProductsApi.CreateProductAsync(_newProduct);
         _createMessage = status switch
         {
             System.Net.HttpStatusCode.Created => $"Producto '{_newProduct}' creado correctamente.",
@@ -104,5 +104,9 @@ else
 
         _newProduct = string.Empty;
         _creating = false;
+
+        // Tras un alta exitosa, recarga la lista para que el nuevo producto se vea de inmediato.
+        if (status == System.Net.HttpStatusCode.Created)
+            await LoadProductsAsync();
     }
 }

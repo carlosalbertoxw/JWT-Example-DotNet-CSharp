@@ -3,6 +3,7 @@ using JwtAuth.Security;
 using JwtAuth.Services;
 using JwtAuth.Stores;
 using JwtAuth.Tokens;
+using JwtAuthDatos.Stores;
 
 namespace JwtAuthTest
 {
@@ -88,11 +89,28 @@ namespace JwtAuthTest
         }
 
         [Test]
-        public void Logout_DeberiaRevocarElRefreshToken()
+        public void Refresh_DeberiaRevocarTodaLaFamilia_AlDetectarReuso()
         {
-            string refreshToken = _authService.Login("admin", "Admin123!").Tokens!.RefreshToken;
+            string r1 = _authService.Login("admin", "Admin123!").Tokens!.RefreshToken;
 
-            bool loggedOut = _authService.Logout(refreshToken);
+            // Rotación normal: r1 -> r2.
+            string r2 = _authService.Refresh(r1).Tokens!.RefreshToken;
+
+            // Reutilización de r1 (ya revocado): debe fallar y, además, revocar
+            // toda la familia, dejando r2 también inservible.
+            Assert.That(_authService.Refresh(r1).Succeeded, Is.False);
+            Assert.That(_authService.Refresh(r2).Succeeded, Is.False,
+                "tras detectar reuso, el token vigente de la familia también debe revocarse");
+        }
+
+        [Test]
+        public void Logout_DeberiaRevocarElRefreshToken_DelPropietario()
+        {
+            AuthResult login = _authService.Login("admin", "Admin123!");
+            string refreshToken = login.Tokens!.RefreshToken;
+            Guid adminId = _userStore.FindByUsername("admin")!.Id;
+
+            bool loggedOut = _authService.Logout(refreshToken, adminId);
 
             Assert.That(loggedOut, Is.True);
             // Tras el logout, el refresh token ya no sirve.
@@ -102,7 +120,22 @@ namespace JwtAuthTest
         [Test]
         public void Logout_DeberiaRetornarFalse_ConRefreshInexistente()
         {
-            Assert.That(_authService.Logout("inexistente"), Is.False);
+            Guid adminId = _userStore.FindByUsername("admin")!.Id;
+
+            Assert.That(_authService.Logout("inexistente", adminId), Is.False);
+        }
+
+        [Test]
+        public void Logout_DeberiaRetornarFalse_SiElTokenEsDeOtroUsuario()
+        {
+            // El refresh token pertenece a "admin"...
+            string refreshToken = _authService.Login("admin", "Admin123!").Tokens!.RefreshToken;
+            Guid otroUsuarioId = _userStore.FindByUsername("user")!.Id;
+
+            // ...pero "user" intenta revocarlo: no debe permitirse.
+            Assert.That(_authService.Logout(refreshToken, otroUsuarioId), Is.False);
+            Assert.That(_authService.Refresh(refreshToken).Succeeded, Is.True,
+                "el token de admin debe seguir vigente tras el intento ajeno");
         }
     }
 }

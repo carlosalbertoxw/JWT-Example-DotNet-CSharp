@@ -1,13 +1,15 @@
 using System.Collections.Concurrent;
 using JwtAuth.Models;
 using JwtAuth.Security;
+using JwtAuth.Stores;
 
-namespace JwtAuth.Stores
+namespace JwtAuthDatos.Stores
 {
     /// <summary>
     /// Implementación en memoria de <see cref="IUserStore"/>. Se siembra con un
     /// par de usuarios de ejemplo (admin y user) cuyas contraseñas se hashean al
-    /// construir el store.
+    /// construir el store. Representa el origen de datos de usuarios; en un
+    /// sistema real iría respaldada por una base de datos.
     /// </summary>
     public class InMemoryUserStore : IUserStore
     {

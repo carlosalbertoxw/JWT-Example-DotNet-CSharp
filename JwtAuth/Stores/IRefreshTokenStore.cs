@@ -16,5 +16,12 @@ namespace JwtAuth.Stores
 
         /// <summary>Revoca todos los refresh tokens activos de un usuario.</summary>
         void RevokeAllForUser(Guid userId);
+
+        /// <summary>
+        /// Elimina los tokens ya expirados para evitar que el almacén crezca sin
+        /// límite. Conserva los revocados aún no expirados, pues siguen siendo
+        /// necesarios para la detección de reutilización. Devuelve cuántos quitó.
+        /// </summary>
+        int RemoveExpired();
     }
 }

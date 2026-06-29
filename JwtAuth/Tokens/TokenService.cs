@@ -91,17 +91,34 @@ namespace JwtAuth.Tokens
             }
         }
 
-        public TokenValidationParameters GetValidationParameters() => new()
+        public TokenValidationParameters GetValidationParameters() =>
+            CreateValidationParameters(_settings, _signingKey);
+
+        /// <summary>
+        /// Construye los parámetros de validación a partir de la configuración,
+        /// sin necesidad de instanciar el servicio. Permite a la capa de API
+        /// configurar el bearer reutilizando exactamente la misma lógica (única
+        /// fuente de verdad) durante el arranque.
+        /// </summary>
+        public static TokenValidationParameters CreateValidationParameters(JwtSettings settings)
+        {
+            ArgumentNullException.ThrowIfNull(settings);
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(settings.SigningKey));
+            return CreateValidationParameters(settings, key);
+        }
+
+        private static TokenValidationParameters CreateValidationParameters(
+            JwtSettings settings, SymmetricSecurityKey signingKey) => new()
         {
             ValidateIssuer = true,
-            ValidIssuer = _settings.Issuer,
+            ValidIssuer = settings.Issuer,
             ValidateAudience = true,
-            ValidAudience = _settings.Audience,
+            ValidAudience = settings.Audience,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = _signingKey,
+            IssuerSigningKey = signingKey,
             ValidateLifetime = true,
             RequireExpirationTime = true,
-            ClockSkew = TimeSpan.FromSeconds(_settings.ClockSkewSeconds)
+            ClockSkew = TimeSpan.FromSeconds(settings.ClockSkewSeconds)
         };
     }
 }

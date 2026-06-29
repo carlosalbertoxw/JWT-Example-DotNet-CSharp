@@ -2,6 +2,7 @@ using System.Net;
 using Bunit;
 using Bunit.TestDoubles;
 using JwtAuthImpl.Auth;
+using JwtAuthImpl.Products;
 using JwtAuthImplTest.Helpers;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,7 +25,9 @@ namespace JwtAuthImplTest.Components
             {
                 BaseAddress = new Uri("http://localhost/")
             };
-            ctx.Services.AddSingleton(new AuthApiClient(http, store));
+            var refresher = new AuthApiClient(http, store, new RefreshCoordinator());
+            var apiHttp = new ApiHttpClient(http, store, refresher);
+            ctx.Services.AddSingleton(new ProductsApiClient(apiHttp));
             return ctx;
         }
 

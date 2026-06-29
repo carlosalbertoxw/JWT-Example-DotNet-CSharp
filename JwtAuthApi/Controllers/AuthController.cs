@@ -4,6 +4,7 @@ using JwtAuth.Services;
 using JwtAuthApi.Contracts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace JwtAuthApi.Controllers
 {
@@ -26,6 +27,7 @@ namespace JwtAuthApi.Controllers
         /// <summary>Valida credenciales y devuelve un par de tokens.</summary>
         [HttpPost("login")]
         [AllowAnonymous]
+        [EnableRateLimiting("auth")]
         [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public IActionResult Login([FromBody] LoginRequest request)
@@ -41,6 +43,7 @@ namespace JwtAuthApi.Controllers
         /// <summary>Renueva el par de tokens a partir de un refresh token válido.</summary>
         [HttpPost("refresh")]
         [AllowAnonymous]
+        [EnableRateLimiting("auth")]
         [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public IActionResult Refresh([FromBody] RefreshRequest request)
@@ -57,13 +60,16 @@ namespace JwtAuthApi.Controllers
         [HttpPost("logout")]
         [Authorize]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public IActionResult Logout([FromBody] RefreshRequest request)
         {
-            bool revoked = _authService.Logout(request.RefreshToken);
+            string? sub = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(sub, out Guid userId))
+                return Unauthorized();
 
-            if (!revoked)
-                return NotFound(new { error = "El refresh token no existe." });
+            // Respuesta idempotente: 204 exista o no el token. No se distingue el
+            // caso "no existe" del "no es tuyo" para no filtrar validez de tokens.
+            _authService.Logout(request.RefreshToken, userId);
 
             return NoContent();
         }

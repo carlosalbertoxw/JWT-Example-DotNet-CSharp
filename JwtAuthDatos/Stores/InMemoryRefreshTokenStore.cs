@@ -1,11 +1,13 @@
 using System.Collections.Concurrent;
 using JwtAuth.Models;
+using JwtAuth.Stores;
 
-namespace JwtAuth.Stores
+namespace JwtAuthDatos.Stores
 {
     /// <summary>
     /// Implementación en memoria de <see cref="IRefreshTokenStore"/>, apta para
-    /// demos y pruebas. En producción se reemplazaría por una persistencia real.
+    /// demos y pruebas. En producción se reemplazaría por una persistencia real
+    /// (base de datos), conservando el mismo contrato.
     /// </summary>
     public class InMemoryRefreshTokenStore : IRefreshTokenStore
     {
@@ -44,6 +46,22 @@ namespace JwtAuth.Stores
                 if (token.UserId == userId && token.RevokedAtUtc is null)
                     token.RevokedAtUtc = DateTime.UtcNow;
             }
+        }
+
+        public int RemoveExpired()
+        {
+            DateTime now = DateTime.UtcNow;
+            int removed = 0;
+
+            foreach (KeyValuePair<string, RefreshToken> entry in _tokens)
+            {
+                // Solo se eliminan los expirados. Un token revocado pero aún no
+                // expirado se conserva para poder detectar su reutilización.
+                if (entry.Value.ExpiresAtUtc <= now && _tokens.TryRemove(entry.Key, out _))
+                    removed++;
+            }
+
+            return removed;
         }
     }
 }

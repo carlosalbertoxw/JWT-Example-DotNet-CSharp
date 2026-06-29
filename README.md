@@ -4,9 +4,10 @@ Ejemplo de autenticación basada en **JWT (JSON Web Tokens)** con **.NET 8 / C#*
 muestra un flujo completo de *login*, *refresh token con rotación*, *logout* y acceso
 a endpoints protegidos por autenticación y por rol.
 
-La solución está dividida en proyectos para mantener la lógica de tokens
-**desacoplada** de la capa web y poder probarla de forma aislada, e incluye un
-cliente **Blazor** que consume la API.
+La solución está dividida en proyectos para separar responsabilidades en capas:
+la **validación/emisión de JWT**, el **acceso a datos** y la **capa web** quedan
+**desacoplados** y se pueden probar de forma aislada. Incluye además un cliente
+**Blazor** que consume la API.
 
 ---
 
@@ -14,15 +15,31 @@ cliente **Blazor** que consume la API.
 
 ```
 JWT-Example-DotNet-CSharp/
-├── JwtAuth/                → Librería con toda la lógica JWT (sin dependencia de ASP.NET Core)
+├── JwtAuth/                → Librería de validación/emisión JWT (sin dependencia de ASP.NET Core)
+├── JwtAuthDatos/           → Capa de datos: almacenes de usuarios, refresh tokens y productos
 ├── JwtAuthApi/             → Web API que expone los endpoints de autenticación y ejemplos
-├── JwtAuthTest/            → Pruebas unitarias (NUnit) de la librería JwtAuth
+├── JwtAuthTest/            → Pruebas unitarias (NUnit) de JwtAuth y JwtAuthDatos
 ├── JwtAuthImpl/            → Implementación cliente de JWT (consumo de la API), desacoplada del front
 ├── JwtAuthImplFront/        → App Blazor (Interactive Server): solo la UI, referencia a JwtAuthImpl
 └── JwtAuthImplTest/        → Pruebas (NUnit + bUnit) de la implementación cliente y los componentes
 ```
 
-### `JwtAuth` — lógica JWT desacoplada (class library)
+### Capas y dependencias (backend)
+
+```
+JwtAuthApi ──► JwtAuth        (validación/emisión: contratos IUserStore / IRefreshTokenStore)
+     │
+     └───────► JwtAuthDatos ──► JwtAuth   (implementa los contratos + almacén de productos)
+```
+
+`JwtAuth` define **qué** se necesita (interfaces) pero no **cómo** se persiste;
+`JwtAuthDatos` aporta las implementaciones. Así, cambiar a una base de datos real
+no toca la lógica de validación: basta con sustituir la capa de datos.
+
+### `JwtAuth` — validación/emisión JWT (class library)
+
+Contiene **solo la lógica de validación y emisión de tokens**, más los **contratos**
+(interfaces) de los almacenes. No conoce cómo se persisten los datos.
 
 | Archivo | Responsabilidad |
 |---|---|
@@ -32,29 +49,49 @@ JWT-Example-DotNet-CSharp/
 | `Models/TokenPair.cs` | Par emitido en login/refresh: access token + refresh token con sus expiraciones. |
 | `Security/IPasswordHasher.cs` + `Pbkdf2PasswordHasher.cs` | Hashing de contraseñas con PBKDF2-SHA256 (salt aleatorio, comparación en tiempo constante). |
 | `Tokens/ITokenService.cs` + `TokenService.cs` | Creación y validación de access tokens (HMAC-SHA256) y generación de refresh tokens. |
-| `Stores/IUserStore.cs` + `InMemoryUserStore.cs` | Repositorio de usuarios (siembra `admin` y `user`). |
-| `Stores/IRefreshTokenStore.cs` + `InMemoryRefreshTokenStore.cs` | Almacén de refresh tokens con soporte de revocación. |
+| `Stores/IUserStore.cs` | **Contrato** del repositorio de usuarios (la implementación vive en `JwtAuthDatos`). |
+| `Stores/IRefreshTokenStore.cs` | **Contrato** del almacén de refresh tokens con soporte de revocación. |
 | `Services/IAuthService.cs` + `AuthService.cs` | Orquesta login, refresh (con rotación) y logout. Devuelve `AuthResult`. |
-| `Extensions/ServiceCollectionExtensions.cs` | `AddJwtAuth(...)`: registra todos los componentes en el contenedor de DI. |
+| `Extensions/ServiceCollectionExtensions.cs` | `AddJwtAuth(...)`: registra la validación/emisión en DI. **No registra los almacenes** (eso lo hace `JwtAuthDatos`). |
 
 > La librería **no referencia ASP.NET Core**. Solo depende de
 > `System.IdentityModel.Tokens.Jwt`, `Microsoft.IdentityModel.Tokens` y
 > `Microsoft.Extensions.DependencyInjection.Abstractions`. Así puede reutilizarse
 > desde cualquier tipo de aplicación (consola, worker, otra API) y probarse sin levantar un host web.
 
+### `JwtAuthDatos` — capa de datos (class library)
+
+Provee las **implementaciones** de los almacenes. Es la única capa que sabe *cómo* se
+guardan los datos; referencia a `JwtAuth` para implementar sus contratos. En este
+ejemplo todo es **en memoria**, pero para migrar a una base de datos real basta con
+cambiar este proyecto, sin tocar `JwtAuth` ni `JwtAuthApi`.
+
+| Archivo | Responsabilidad |
+|---|---|
+| `Stores/InMemoryUserStore.cs` | Implementa `IUserStore`. Siembra los usuarios `admin` y `user` (con contraseñas hasheadas). |
+| `Stores/InMemoryRefreshTokenStore.cs` | Implementa `IRefreshTokenStore` (alta, búsqueda, revocación, purga de expirados). |
+| `Stores/IProductStore.cs` + `InMemoryProductStore.cs` | Almacén del catálogo de productos (contenido de ejemplo, ajeno a JWT). |
+| `Extensions/ServiceCollectionExtensions.cs` | `AddJwtAuthData()`: registra los tres almacenes en DI. **Único punto a cambiar para apuntar a una BD real.** |
+
 ### `JwtAuthApi` — Web API
 
 | Archivo | Responsabilidad |
 |---|---|
-| `Program.cs` | Configura el bearer JWT (reutilizando los `TokenValidationParameters` del `TokenService`), la autorización, los controladores y Swagger con botón **Authorize**. |
+| `Program.cs` | Registra la validación JWT (`AddJwtAuth`) y la capa de datos (`AddJwtAuthData`); configura el bearer JWT (reutilizando los `TokenValidationParameters` del `TokenService`), la autorización, los controladores y Swagger con botón **Authorize**. |
 | `Contracts/AuthContracts.cs` | DTOs de entrada/salida: `LoginRequest`, `RefreshRequest`, `AuthResponse`. |
-| `Controllers/AuthController.cs` | Endpoints `login`, `refresh`, `logout` y `me`. |
-| `Controllers/ProductsController.cs` | Recurso de ejemplo con tres niveles de acceso: público, autenticado y por rol. |
+| `Controllers/AuthController.cs` | Endpoints `login`, `refresh`, `logout` y `me`. Solo traduce entre HTTP y `IAuthService`. |
+| `Controllers/ProductsController.cs` | Recurso de ejemplo con tres niveles de acceso (público, autenticado y por rol). Delega la lógica en `IProductService`. |
+| `Services/IProductService.cs` + `ProductService.cs` | Lógica del catálogo de productos (ajena a JWT); se apoya en `IProductStore` de la capa de datos. |
+
+> La lógica de **autenticación** (`AuthController`/`IAuthService`) y la de **productos**
+> (`ProductsController`/`IProductService`) están separadas en clases distintas: los
+> productos son solo contenido de ejemplo y no se mezclan con el flujo JWT.
 
 ### `JwtAuthTest` — pruebas unitarias (NUnit)
 
-27 pruebas que cubren el hasher de contraseñas, el `TokenService`, el
-`InMemoryRefreshTokenStore` y el `AuthService` (login, rotación de refresh, logout).
+30 pruebas que cubren el hasher de contraseñas, el `TokenService`, el
+`InMemoryRefreshTokenStore` (de `JwtAuthDatos`) y el `AuthService` (login, rotación de
+refresh, logout).
 
 ### `JwtAuthImpl` — implementación cliente de JWT (class library)
 
@@ -62,14 +99,21 @@ Encapsula **todo el consumo de la JwtAuthApi**, desacoplado de la UI. El front s
 referencia esta librería y la registra con una llamada. Usa `FrameworkReference` a
 `Microsoft.AspNetCore.App` porque depende de tipos de ASP.NET Core Components.
 
+Al igual que en la API, la **autenticación** y los **productos** están separados en
+clases distintas: `AuthApiClient` solo conoce los endpoints `api/auth/*`, mientras que
+`ProductsApiClient` consume los de productos reutilizando la infraestructura HTTP común.
+
 | Archivo | Responsabilidad |
 |---|---|
 | `Models/AuthModels.cs` / `ApiModels.cs` | DTOs que reflejan los contratos de la API. |
 | `Auth/JwtParser.cs` | Lee los claims del JWT (sin validar la firma) y detecta expiración. |
 | `Auth/TokenStore.cs` | Persiste access/refresh tokens con `ProtectedLocalStorage` (cifrado en servidor). |
-| `Auth/AuthApiClient.cs` | Cliente HTTP tipado: login, refresh, logout y endpoints protegidos, con **reintento + refresh automático ante 401**. |
+| `Auth/AuthApiClient.cs` | Cliente HTTP tipado de **autenticación**: login, refresh y logout. Implementa `ITokenRefresher`. |
+| `Auth/ApiHttpClient.cs` | Canal HTTP compartido por los clientes de negocio: adjunta el bearer y hace **reintento + refresh automático ante 401**. |
+| `Auth/ITokenRefresher.cs` | Abstrae el refresco para que `ApiHttpClient` lo dispare sin acoplarse a `AuthApiClient`. |
+| `Products/ProductsApiClient.cs` | Cliente HTTP tipado de **productos** (catálogo público, listado protegido, alta). Sin plomería de auth. |
 | `Auth/JwtAuthenticationStateProvider.cs` | `AuthenticationStateProvider` que arma el `ClaimsPrincipal` desde el token y renueva si expiró. |
-| `Extensions/ServiceCollectionExtensions.cs` | `AddJwtAuthClient(apiBaseUrl, ...)`: registra cliente HTTP, stores y proveedor de estado. |
+| `Extensions/ServiceCollectionExtensions.cs` | `AddJwtAuthClient(apiBaseUrl, ...)`: registra los clientes HTTP (auth y productos), stores y proveedor de estado. |
 
 ### `JwtAuthImplFront` — cliente Blazor (Interactive Server)
 
@@ -113,7 +157,8 @@ por uno en memoria; las llamadas HTTP se simulan con un `FakeHttpMessageHandler`
 | Área | Qué cubre |
 |---|---|
 | `JwtParserTests` | Extracción de claims (username, roles) y detección de expiración. |
-| `AuthApiClientTests` | Login, catálogo público (sin token), bearer en endpoints protegidos, **401 → refresh → reintento**, logout que limpia el store. |
+| `AuthApiClientTests` | Login (éxito y fallo) y logout que limpia el store. |
+| `ProductsApiClientTests` | Catálogo público (sin token), bearer en endpoints protegidos, **401 → refresh → reintento** y código HTTP al crear. |
 | `JwtAuthenticationStateProviderTests` | Anónimo sin token, principal con nombre/roles, refresco al expirar, limpieza si el refresh falla. |
 | `Components/NavMenuTests` | Enlaces según estado de sesión (login vs. usuario + logout) y catálogo público. |
 | `Components/ProductsTests` | Redirección al login si anónimo; sección "crear" solo con rol `Admin`. |
@@ -180,7 +225,7 @@ inicio* (Configurar proyectos de inicio → Varios proyectos).
 | `GET`  | `/api/auth/me`      | Bearer  | Devuelve los claims del usuario autenticado. |
 | `GET`  | `/api/products/public` | Pública | Catálogo visible para cualquiera. |
 | `GET`  | `/api/products`     | Bearer  | Listado completo (requiere token válido). |
-| `POST` | `/api/products`     | Rol `Admin` | Crea un producto (simulado). |
+| `POST` | `/api/products`     | Rol `Admin` | Crea un producto (lo agrega al catálogo en memoria). |
 
 ---
 
@@ -311,10 +356,13 @@ Este proyecto es **educativo**. Antes de llevarlo a un entorno real, hay que ten
 
 - **Clave de firma:** no dejarla en `appsettings.json`. Usar *user secrets*, variables
   de entorno o un *secret manager*, y una clave robusta de ≥32 bytes.
-- **Persistencia:** `InMemoryUserStore` e `InMemoryRefreshTokenStore` guardan los datos
-  en memoria, por lo que **se pierden al reiniciar** y no se comparten entre instancias.
-  En producción se reemplazarían por una base de datos (p. ej. Entity Framework Core),
-  implementando las mismas interfaces `IUserStore` / `IRefreshTokenStore`.
+- **Persistencia:** los almacenes de `JwtAuthDatos` (`InMemoryUserStore`,
+  `InMemoryRefreshTokenStore`, `InMemoryProductStore`) guardan los datos en memoria, por
+  lo que **se pierden al reiniciar** y no se comparten entre instancias. En producción se
+  reemplazarían por una base de datos (p. ej. Entity Framework Core) implementando las
+  mismas interfaces `IUserStore` / `IRefreshTokenStore` / `IProductStore`. Al estar
+  aislados en su propia capa, **solo cambia `JwtAuthDatos` y su `AddJwtAuthData()`**; el
+  resto de la solución no se entera.
 - **Transporte del refresh token:** para clientes web suele entregarse en una cookie
   `HttpOnly` + `Secure` en lugar del cuerpo JSON, para mitigar XSS.
 - **HTTPS:** servir siempre sobre TLS.

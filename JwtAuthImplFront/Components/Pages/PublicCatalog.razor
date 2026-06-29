@@ -1,5 +1,5 @@
 @page "/catalog"
-@inject AuthApiClient AuthApi
+@inject ProductsApiClient ProductsApi
 
 <PageTitle>Catálogo público</PageTitle>
 
@@ -35,7 +35,7 @@ else
     {
         try
         {
-            _products = await AuthApi.GetPublicProductsAsync();
+            _products = await ProductsApi.GetPublicProductsAsync();
         }
         catch
         {

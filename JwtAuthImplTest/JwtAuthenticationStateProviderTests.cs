@@ -13,7 +13,7 @@ namespace JwtAuthImplTest
         {
             var store = new InMemoryTokenStore();
             var http = new HttpClient(handler) { BaseAddress = new Uri("http://localhost/") };
-            var api = new AuthApiClient(http, store);
+            var api = new AuthApiClient(http, store, new RefreshCoordinator());
             return (new JwtAuthenticationStateProvider(store, api), store);
         }
 

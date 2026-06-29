@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using JwtAuthImpl.Models;
@@ -6,23 +5,23 @@ using JwtAuthImpl.Models;
 namespace JwtAuthImpl.Auth
 {
     /// <summary>
-    /// Cliente tipado que encapsula las llamadas a la JwtAuthApi: autenticación
-    /// (login, refresh, logout) y consumo de endpoints protegidos. Adjunta el
-    /// access token automáticamente e intenta refrescarlo una vez si la API
-    /// responde 401.
+    /// Cliente tipado que encapsula la autenticación contra la JwtAuthApi:
+    /// login, refresco y logout. Es la única clase que conoce los endpoints
+    /// <c>api/auth/*</c>; el consumo de recursos de negocio (productos) vive en
+    /// clases aparte que reutilizan <see cref="ApiHttpClient"/>.
     /// </summary>
-    public class AuthApiClient
+    public class AuthApiClient : ITokenRefresher
     {
         private readonly HttpClient _http;
         private readonly ITokenStore _tokenStore;
+        private readonly RefreshCoordinator _refreshCoordinator;
 
-        public AuthApiClient(HttpClient http, ITokenStore tokenStore)
+        public AuthApiClient(HttpClient http, ITokenStore tokenStore, RefreshCoordinator refreshCoordinator)
         {
             _http = http;
             _tokenStore = tokenStore;
+            _refreshCoordinator = refreshCoordinator;
         }
-
-        // ----- Autenticación -----
 
         /// <summary>Inicia sesión y guarda los tokens devueltos.</summary>
         public async Task<bool> LoginAsync(string username, string password)
@@ -41,25 +40,47 @@ namespace JwtAuthImpl.Auth
             return true;
         }
 
-        /// <summary>Renueva el par de tokens usando el refresh token almacenado.</summary>
+        /// <summary>
+        /// Renueva el par de tokens usando el refresh token almacenado.
+        /// Serializa el refresco con un semáforo de circuito (single-flight): si
+        /// varias llamadas concurrentes lo solicitan, solo una golpea la API y
+        /// las demás reutilizan su resultado, evitando rotaciones que se anularían
+        /// entre sí.
+        /// </summary>
         public async Task<bool> TryRefreshAsync()
         {
-            string? refreshToken = await _tokenStore.GetRefreshTokenAsync();
-            if (string.IsNullOrEmpty(refreshToken))
+            string? refreshTokenBefore = await _tokenStore.GetRefreshTokenAsync();
+            if (string.IsNullOrEmpty(refreshTokenBefore))
                 return false;
 
-            HttpResponseMessage response = await _http.PostAsJsonAsync(
-                "api/auth/refresh", new RefreshRequest(refreshToken));
+            await _refreshCoordinator.Gate.WaitAsync();
+            try
+            {
+                // Otra llamada pudo refrescar mientras esperábamos el semáforo: si
+                // el refresh token almacenado cambió, ese refresco ya nos sirve.
+                string? current = await _tokenStore.GetRefreshTokenAsync();
+                if (string.IsNullOrEmpty(current))
+                    return false;
+                if (!string.Equals(current, refreshTokenBefore, StringComparison.Ordinal))
+                    return true;
 
-            if (!response.IsSuccessStatusCode)
-                return false;
+                HttpResponseMessage response = await _http.PostAsJsonAsync(
+                    "api/auth/refresh", new RefreshRequest(current));
 
-            var auth = await response.Content.ReadFromJsonAsync<AuthResponse>();
-            if (auth is null)
-                return false;
+                if (!response.IsSuccessStatusCode)
+                    return false;
 
-            await _tokenStore.SaveAsync(auth.AccessToken, auth.RefreshToken);
-            return true;
+                var auth = await response.Content.ReadFromJsonAsync<AuthResponse>();
+                if (auth is null)
+                    return false;
+
+                await _tokenStore.SaveAsync(auth.AccessToken, auth.RefreshToken);
+                return true;
+            }
+            finally
+            {
+                _refreshCoordinator.Gate.Release();
+            }
         }
 
         /// <summary>Revoca el refresh token en la API y limpia el almacenamiento local.</summary>
@@ -75,7 +96,11 @@ namespace JwtAuthImpl.Auth
                     {
                         Content = JsonContent.Create(new RefreshRequest(refreshToken))
                     };
-                    await AttachTokenAsync(request);
+
+                    string? accessToken = await _tokenStore.GetAccessTokenAsync();
+                    if (!string.IsNullOrEmpty(accessToken))
+                        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
                     await _http.SendAsync(request);
                 }
                 catch
@@ -85,68 +110,6 @@ namespace JwtAuthImpl.Auth
             }
 
             await _tokenStore.ClearAsync();
-        }
-
-        // ----- Endpoints de ejemplo -----
-
-        /// <summary>Obtiene el catálogo público (no requiere autenticación).</summary>
-        public async Task<ProductsResponse?> GetPublicProductsAsync()
-        {
-            // Llamada anónima: no se adjunta token.
-            return await _http.GetFromJsonAsync<ProductsResponse>("api/products/public");
-        }
-
-        /// <summary>Obtiene el listado de productos (requiere autenticación).</summary>
-        public async Task<ProductsResponse?> GetProductsAsync()
-        {
-            HttpResponseMessage response = await SendAuthorizedAsync(
-                () => new HttpRequestMessage(HttpMethod.Get, "api/products"));
-
-            return response.IsSuccessStatusCode
-                ? await response.Content.ReadFromJsonAsync<ProductsResponse>()
-                : null;
-        }
-
-        /// <summary>Crea un producto (requiere rol Admin). Devuelve el código HTTP.</summary>
-        public async Task<HttpStatusCode> CreateProductAsync(string name)
-        {
-            HttpResponseMessage response = await SendAuthorizedAsync(() =>
-                new HttpRequestMessage(HttpMethod.Post, "api/products")
-                {
-                    Content = JsonContent.Create(name)
-                });
-
-            return response.StatusCode;
-        }
-
-        // ----- Infraestructura -----
-
-        /// <summary>
-        /// Envía una petición autenticada. Si la API responde 401, intenta
-        /// refrescar el token una vez y reintenta la petición original.
-        /// </summary>
-        private async Task<HttpResponseMessage> SendAuthorizedAsync(Func<HttpRequestMessage> requestFactory)
-        {
-            HttpRequestMessage request = requestFactory();
-            await AttachTokenAsync(request);
-
-            HttpResponseMessage response = await _http.SendAsync(request);
-
-            if (response.StatusCode == HttpStatusCode.Unauthorized && await TryRefreshAsync())
-            {
-                HttpRequestMessage retry = requestFactory();
-                await AttachTokenAsync(retry);
-                response = await _http.SendAsync(retry);
-            }
-
-            return response;
-        }
-
-        private async Task AttachTokenAsync(HttpRequestMessage request)
-        {
-            string? accessToken = await _tokenStore.GetAccessTokenAsync();
-            if (!string.IsNullOrEmpty(accessToken))
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         }
     }
 }

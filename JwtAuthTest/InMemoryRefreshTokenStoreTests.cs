@@ -1,5 +1,5 @@
 using JwtAuth.Models;
-using JwtAuth.Stores;
+using JwtAuthDatos.Stores;
 
 namespace JwtAuthTest
 {
@@ -73,6 +73,24 @@ namespace JwtAuthTest
             _store.Add(token);
 
             Assert.That(_store.Find("expirado")!.IsActive, Is.False);
+        }
+
+        [Test]
+        public void RemoveExpired_DeberiaQuitarSoloLosExpirados()
+        {
+            var userId = Guid.NewGuid();
+            _store.Add(NewToken("vigente", userId, days: 7));
+            _store.Add(NewToken("expirado", userId, days: -1));
+            // Revocado pero aún no expirado: debe conservarse para detectar reuso.
+            _store.Add(NewToken("revocado-vigente", userId, days: 7));
+            _store.Revoke("revocado-vigente");
+
+            int removed = _store.RemoveExpired();
+
+            Assert.That(removed, Is.EqualTo(1));
+            Assert.That(_store.Find("expirado"), Is.Null);
+            Assert.That(_store.Find("vigente"), Is.Not.Null);
+            Assert.That(_store.Find("revocado-vigente"), Is.Not.Null);
         }
     }
 }

@@ -1,4 +1,5 @@
 using JwtAuthImpl.Auth;
+using JwtAuthImpl.Products;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -11,9 +12,10 @@ namespace JwtAuthImpl.Extensions
     public static class ServiceCollectionExtensions
     {
         /// <summary>
-        /// Registra el cliente HTTP tipado hacia la JwtAuthApi, el almacén de
-        /// tokens y el proveedor de estado de autenticación, además del soporte
-        /// de autorización y estado en cascada para Blazor.
+        /// Registra los clientes HTTP tipados hacia la JwtAuthApi (autenticación
+        /// y productos), el almacén de tokens y el proveedor de estado de
+        /// autenticación, además del soporte de autorización y estado en cascada
+        /// para Blazor.
         /// </summary>
         /// <param name="services">Colección de servicios.</param>
         /// <param name="apiBaseUrl">URL base de la JwtAuthApi.</param>
@@ -26,22 +28,35 @@ namespace JwtAuthImpl.Extensions
             string apiBaseUrl,
             bool acceptAnyServerCertificate = false)
         {
-            services.AddHttpClient<AuthApiClient>(client =>
+            // Configuración común a todos los clientes tipados hacia la API.
+            void ConfigureClient(HttpClient client) => client.BaseAddress = new Uri(apiBaseUrl);
+
+            HttpMessageHandler ConfigureHandler()
+            {
+                var handler = new HttpClientHandler();
+                if (acceptAnyServerCertificate)
                 {
-                    client.BaseAddress = new Uri(apiBaseUrl);
-                })
-                .ConfigurePrimaryHttpMessageHandler(() =>
-                {
-                    var handler = new HttpClientHandler();
-                    if (acceptAnyServerCertificate)
-                    {
-                        handler.ServerCertificateCustomValidationCallback =
-                            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
-                    }
-                    return handler;
-                });
+                    handler.ServerCertificateCustomValidationCallback =
+                        HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+                }
+                return handler;
+            }
+
+            // Cliente de autenticación (endpoints api/auth/*).
+            services.AddHttpClient<AuthApiClient>(ConfigureClient)
+                .ConfigurePrimaryHttpMessageHandler(ConfigureHandler);
+
+            // Canal HTTP compartido para los clientes de negocio (adjunta token
+            // y refresca ante 401). El refresco lo aporta AuthApiClient.
+            services.AddHttpClient<ApiHttpClient>(ConfigureClient)
+                .ConfigurePrimaryHttpMessageHandler(ConfigureHandler);
+            services.AddScoped<ITokenRefresher>(sp => sp.GetRequiredService<AuthApiClient>());
+
+            // Cliente de productos (contenido de ejemplo). Usa el canal compartido.
+            services.AddScoped<ProductsApiClient>();
 
             services.AddScoped<ITokenStore, TokenStore>();
+            services.AddScoped<RefreshCoordinator>();
             services.AddScoped<JwtAuthenticationStateProvider>();
             services.AddScoped<AuthenticationStateProvider>(sp =>
                 sp.GetRequiredService<JwtAuthenticationStateProvider>());

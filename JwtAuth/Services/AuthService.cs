@@ -48,7 +48,21 @@ namespace JwtAuth.Services
         {
             RefreshToken? stored = _refreshTokenStore.Find(refreshToken);
 
-            if (stored is null || !stored.IsActive)
+            if (stored is null)
+                return AuthResult.Failure("Refresh token inválido o expirado.");
+
+            // Detección de reutilización: si el token existe pero ya fue revocado,
+            // es la señal clásica de robo + replay (alguien usa un token que ya se
+            // rotó). Se revoca toda la familia de refresh tokens del usuario para
+            // expulsar tanto al atacante como a la sesión comprometida.
+            if (stored.RevokedAtUtc is not null)
+            {
+                _refreshTokenStore.RevokeAllForUser(stored.UserId);
+                return AuthResult.Failure("Refresh token inválido o expirado.");
+            }
+
+            // Llegados aquí no está revocado; si no está activo es que expiró.
+            if (!stored.IsActive)
                 return AuthResult.Failure("Refresh token inválido o expirado.");
 
             AppUser? user = _userStore.FindById(stored.UserId);
@@ -61,8 +75,15 @@ namespace JwtAuth.Services
             return AuthResult.Success(IssueTokens(user));
         }
 
-        public bool Logout(string refreshToken)
+        public bool Logout(string refreshToken, Guid userId)
         {
+            RefreshToken? stored = _refreshTokenStore.Find(refreshToken);
+
+            // Solo el propietario del refresh token puede revocarlo: así un usuario
+            // autenticado no puede cerrar la sesión de otro adivinando su token.
+            if (stored is null || stored.UserId != userId)
+                return false;
+
             return _refreshTokenStore.Revoke(refreshToken);
         }
 
