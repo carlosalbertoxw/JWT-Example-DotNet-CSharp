@@ -206,6 +206,45 @@ Luego abre la app Blazor en el navegador, ve a **Iniciar sesión** y usa uno de 
 usuarios de ejemplo. Desde Visual Studio puedes configurar ambos como *proyectos de
 inicio* (Configurar proyectos de inicio → Varios proyectos).
 
+### Ejecutar con Docker Compose
+
+Como alternativa a instalar el SDK, ambas aplicaciones se pueden levantar en
+contenedores. Requisitos: **Docker** (con Compose v2).
+
+```bash
+docker compose up --build
+```
+
+| Servicio | URL | Descripción |
+|---|---|---|
+| `front` | `http://localhost:5070` | Cliente Blazor (punto de entrada para el usuario). |
+| `api` | `http://localhost:5274/swagger` | API + Swagger UI. |
+
+Para detenerlos:
+
+```bash
+docker compose down
+```
+
+Cada aplicación tiene su propio `Dockerfile` multi-etapa (compila con la imagen
+`sdk:8.0` y ejecuta sobre la ligera `aspnet:8.0`), orquestados por
+[`docker-compose.yml`](docker-compose.yml). Detalles a tener en cuenta:
+
+- **Contexto de build en la raíz:** cada `Dockerfile` se construye desde la raíz de la
+  solución porque los proyectos referencian a sus hermanos (`JwtAuth`/`JwtAuthDatos` la
+  API, `JwtAuthImpl` el front).
+- **Red interna:** dentro de Compose el front llama a la API por el **nombre del
+  servicio** (`ApiBaseUrl=http://api:8080`), no por `localhost`. Los contenedores
+  escuchan en el puerto `8080` (por defecto en la imagen `aspnet:8.0`) y se publican en
+  los puertos `5070`/`5274` del host.
+- **Clave de firma:** se inyecta por variable de entorno `Jwt__SigningKey` en
+  `docker-compose.yml` (el `__` mapea a la sección `Jwt:SigningKey`). El valor incluido
+  es solo para desarrollo local — cámbialo por uno propio de ≥32 bytes en cualquier
+  entorno real (ver [Consideraciones para producción](#consideraciones-para-producción)).
+- **Entorno:** se ejecutan en `ASPNETCORE_ENVIRONMENT=Development` para exponer Swagger.
+  Como la comunicación interna es HTTP, la advertencia `Failed to determine the https
+  port for redirect` en los logs es esperada e inofensiva.
+
 ### Usuarios de ejemplo
 
 | Usuario | Contraseña | Roles |
@@ -376,3 +415,4 @@ Este proyecto es **educativo**. Antes de llevarlo a un entorno real, hay que ten
 - `Microsoft.AspNetCore.Authentication.JwtBearer` (middleware de autenticación)
 - `Swashbuckle.AspNetCore` (Swagger / OpenAPI)
 - NUnit (pruebas unitarias)
+- Docker / Docker Compose (empaquetado y orquestación de la API y el front)
