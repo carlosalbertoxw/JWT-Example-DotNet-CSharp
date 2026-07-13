@@ -1,0 +1,17 @@
+# Artefactos de build de .NET: no deben entrar en el contexto de Docker.
+**/bin/
+**/obj/
+**/out/
+
+# Control de versiones y metadatos.
+.git/
+.gitignore
+.vs/
+.vscode/
+*.user
+
+# Docker / documentación (no afectan al build de la app).
+**/Dockerfile
+docker-compose*.yml
+.dockerignore
+README.md

@@ -1,0 +1,39 @@
+# Levanta las dos aplicaciones (API + front Blazor) en una red compartida.
+#
+#   docker compose up --build
+#
+# Front:   http://localhost:5070
+# API:     http://localhost:5274/swagger
+#
+# Dentro de la red de compose el front llama a la API por el nombre del servicio
+# (http://api:8080), no por localhost.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: JwtAuthApi/Dockerfile
+    ports:
+      - "5274:8080"
+    environment:
+      # Development habilita Swagger y desactiva la guardia de clave de arranque.
+      ASPNETCORE_ENVIRONMENT: Development
+      # Clave de firma JWT. Cámbiela por una propia (>= 32 bytes) fuera de local.
+      # El doble guion bajo (__) mapea a la sección Jwt:SigningKey de la config.
+      Jwt__SigningKey: "clave-de-desarrollo-solo-local-no-usar-en-produccion-1234567890"
+    restart: unless-stopped
+
+  front:
+    build:
+      context: .
+      dockerfile: JwtAuthImplFront/Dockerfile
+    ports:
+      - "5070:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      # El front (Blazor Server) llama a la API desde dentro del contenedor,
+      # por eso usa el DNS del servicio de compose y no localhost.
+      ApiBaseUrl: "http://api:8080"
+    depends_on:
+      - api
+    restart: unless-stopped
