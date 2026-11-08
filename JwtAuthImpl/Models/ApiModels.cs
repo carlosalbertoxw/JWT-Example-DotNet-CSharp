@@ -1,20 +1,11 @@
 namespace JwtAuthImpl.Models
 {
-    /// <summary>Respuesta de los endpoints de productos de la API.</summary>
-    public class ProductsResponse
-    {
-        public string Message { get; set; } = string.Empty;
+    /// <summary>Producto del catálogo público (la API no envía el precio).</summary>
+    public record PublicProduct(int Id, string Name, string Description);
 
-        public string[] Items { get; set; } = Array.Empty<string>();
-    }
+    /// <summary>Producto del catálogo completo (requiere sesión).</summary>
+    public record Product(int Id, string Name, string Description, decimal Price);
 
-    /// <summary>Respuesta del endpoint /api/auth/me con los claims del usuario.</summary>
-    public class MeResponse
-    {
-        public string? UserId { get; set; }
-
-        public string? Username { get; set; }
-
-        public string[] Roles { get; set; } = Array.Empty<string>();
-    }
+    /// <summary>Datos para crear un producto (requiere rol Admin).</summary>
+    public record NewProduct(string Name, string Description, decimal Price);
 }

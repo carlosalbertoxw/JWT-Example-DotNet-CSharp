@@ -1,98 +1,75 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using JwtAuth.Configuration;
 using JwtAuth.Models;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
 namespace JwtAuth.Tokens
 {
     /// <summary>
     /// Implementación de <see cref="ITokenService"/> basada en
-    /// <see cref="JwtSecurityTokenHandler"/> y firma simétrica HMAC-SHA256.
+    /// <see cref="JsonWebTokenHandler"/> (el manejador recomendado, el mismo que usa
+    /// JwtBearer para validar) y firma simétrica HMAC-SHA256.
     /// </summary>
+    /// <remarks>
+    /// Claims del access token (contrato común de los ejemplos): <c>sub</c> (id del
+    /// usuario), <c>username</c>, <c>role</c>, <c>iss</c>, <c>aud</c>, <c>iat</c>,
+    /// <c>nbf</c>, <c>exp</c> y <c>jti</c>.
+    /// </remarks>
     public class TokenService : ITokenService
     {
+        public const string UsernameClaim = "username";
+        public const string RoleClaim = "role";
+
         private readonly JwtSettings _settings;
         private readonly SymmetricSecurityKey _signingKey;
-        private readonly JwtSecurityTokenHandler _handler = new();
+        private readonly TimeProvider _time;
+        private readonly JsonWebTokenHandler _handler = new();
 
-        public TokenService(JwtSettings settings)
+        public TokenService(JwtSettings settings) : this(settings, TimeProvider.System)
         {
-            _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-
-            if (string.IsNullOrWhiteSpace(_settings.SigningKey))
-                throw new ArgumentException("La clave de firma (SigningKey) no puede estar vacía.", nameof(settings));
-
-            byte[] keyBytes = Encoding.UTF8.GetBytes(_settings.SigningKey);
-            if (keyBytes.Length < 32)
-                throw new ArgumentException("La clave de firma debe tener al menos 32 bytes para HMAC-SHA256.", nameof(settings));
-
-            _signingKey = new SymmetricSecurityKey(keyBytes);
         }
 
-        public (string Token, DateTime ExpiresAtUtc) CreateAccessToken(AppUser user)
+        public TokenService(JwtSettings settings, TimeProvider time)
+        {
+            _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+            _time = time;
+            _signingKey = CreateSigningKey(settings);
+        }
+
+        public string CreateAccessToken(AppUser user)
         {
             ArgumentNullException.ThrowIfNull(user);
 
-            DateTime now = DateTime.UtcNow;
+            DateTime now = _time.GetUtcNow().UtcDateTime;
             DateTime expires = now.AddMinutes(_settings.AccessTokenMinutes);
 
-            // notBefore se ubica un segundo antes para que el token siga siendo
-            // construible incluso con tiempos de vida muy cortos (útil en pruebas)
-            // sin violar la regla "expires debe ser posterior a notBefore".
-            DateTime notBefore = now.AddSeconds(-1);
-
-            var claims = new List<Claim>
+            var descriptor = new SecurityTokenDescriptor
             {
-                new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-                new(JwtRegisteredClaimNames.UniqueName, user.Username),
-                new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                new("username", user.Username)
+                Issuer = _settings.Issuer,
+                Audience = _settings.Audience,
+                IssuedAt = now,
+                // notBefore un segundo antes: permite tiempos de vida muy cortos
+                // (útil en pruebas) sin violar "expires posterior a notBefore".
+                NotBefore = now.AddSeconds(-1),
+                Expires = expires,
+                Claims = new Dictionary<string, object>
+                {
+                    [JwtRegisteredClaimNames.Sub] = user.Id.ToString(),
+                    [UsernameClaim] = user.Username,
+                    [RoleClaim] = user.Role,
+                    [JwtRegisteredClaimNames.Jti] = Guid.NewGuid().ToString()
+                },
+                SigningCredentials = new SigningCredentials(_signingKey, SecurityAlgorithms.HmacSha256)
             };
 
-            foreach (string role in user.Roles)
-                claims.Add(new Claim(ClaimTypes.Role, role));
-
-            var credentials = new SigningCredentials(_signingKey, SecurityAlgorithms.HmacSha256);
-
-            var token = new JwtSecurityToken(
-                issuer: _settings.Issuer,
-                audience: _settings.Audience,
-                claims: claims,
-                notBefore: notBefore,
-                expires: expires,
-                signingCredentials: credentials);
-
-            return (_handler.WriteToken(token), expires);
+            return _handler.CreateToken(descriptor);
         }
 
-        public string GenerateRefreshToken()
-        {
-            byte[] randomBytes = RandomNumberGenerator.GetBytes(64);
-            return Convert.ToBase64String(randomBytes);
-        }
-
-        public ClaimsPrincipal? ValidateAccessToken(string token)
-        {
-            if (string.IsNullOrWhiteSpace(token) || !_handler.CanReadToken(token))
-                return null;
-
-            try
-            {
-                ClaimsPrincipal principal = _handler.ValidateToken(token, GetValidationParameters(), out _);
-                return principal;
-            }
-            catch (Exception)
-            {
-                // Firma inválida, token expirado, issuer/audience incorrectos, etc.
-                return null;
-            }
-        }
-
-        public TokenValidationParameters GetValidationParameters() =>
-            CreateValidationParameters(_settings, _signingKey);
+        /// <summary>Refresh token opaco: 32 bytes aleatorios en hexadecimal (64 caracteres).</summary>
+        public string GenerateRefreshToken() =>
+            Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
 
         /// <summary>
         /// Construye los parámetros de validación a partir de la configuración,
@@ -103,22 +80,39 @@ namespace JwtAuth.Tokens
         public static TokenValidationParameters CreateValidationParameters(JwtSettings settings)
         {
             ArgumentNullException.ThrowIfNull(settings);
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(settings.SigningKey));
-            return CreateValidationParameters(settings, key);
+            return CreateValidationParameters(settings, CreateSigningKey(settings));
+        }
+
+        private static SymmetricSecurityKey CreateSigningKey(JwtSettings settings)
+        {
+            if (string.IsNullOrWhiteSpace(settings.SigningKey))
+                throw new ArgumentException("La clave de firma (SigningKey) no puede estar vacía.", nameof(settings));
+
+            byte[] keyBytes = Encoding.UTF8.GetBytes(settings.SigningKey);
+            if (keyBytes.Length < JwtSettings.MinSigningKeyBytes)
+                throw new ArgumentException(
+                    $"La clave de firma debe tener al menos {JwtSettings.MinSigningKeyBytes} bytes para HMAC-SHA256.",
+                    nameof(settings));
+
+            return new SymmetricSecurityKey(keyBytes);
         }
 
         private static TokenValidationParameters CreateValidationParameters(
             JwtSettings settings, SymmetricSecurityKey signingKey) => new()
-        {
-            ValidateIssuer = true,
-            ValidIssuer = settings.Issuer,
-            ValidateAudience = true,
-            ValidAudience = settings.Audience,
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = signingKey,
-            ValidateLifetime = true,
-            RequireExpirationTime = true,
-            ClockSkew = TimeSpan.FromSeconds(settings.ClockSkewSeconds)
-        };
+            {
+                ValidateIssuer = true,
+                ValidIssuer = settings.Issuer,
+                ValidateAudience = true,
+                ValidAudience = settings.Audience,
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = signingKey,
+                ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
+                ValidateLifetime = true,
+                RequireExpirationTime = true,
+                ClockSkew = TimeSpan.FromSeconds(settings.ClockSkewSeconds),
+                // Los claims conservan sus nombres cortos del contrato (sub, username, role).
+                NameClaimType = UsernameClaim,
+                RoleClaimType = RoleClaim
+            };
     }
 }

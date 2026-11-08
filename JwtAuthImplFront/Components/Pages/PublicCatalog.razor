@@ -6,7 +6,7 @@
 <h1>Catálogo público</h1>
 
 <p>Esta página consume el endpoint <code>GET /api/products/public</code>, que es
-<strong>anónimo</strong>: no requiere iniciar sesión.</p>
+<strong>anónimo</strong>: no requiere iniciar sesión y por eso <strong>no muestra el precio</strong>.</p>
 
 @if (_loading)
 {
@@ -18,17 +18,25 @@ else if (_products is null)
 }
 else
 {
-    <p>@_products.Message</p>
-    <ul>
-        @foreach (var item in _products.Items)
-        {
-            <li>@item</li>
-        }
-    </ul>
+    <table class="table">
+        <thead>
+            <tr><th>Producto</th><th>Descripción</th><th>Precio</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var product in _products)
+            {
+                <tr>
+                    <td>@product.Name</td>
+                    <td>@product.Description</td>
+                    <td><span class="badge text-bg-secondary">Requiere sesión</span></td>
+                </tr>
+            }
+        </tbody>
+    </table>
 }
 
 @code {
-    private ProductsResponse? _products;
+    private IReadOnlyList<PublicProduct>? _products;
     private bool _loading = true;
 
     protected override async Task OnInitializedAsync()
@@ -37,7 +45,11 @@ else
         {
             _products = await ProductsApi.GetPublicProductsAsync();
         }
-        catch
+        catch (HttpRequestException)
+        {
+            _products = null;
+        }
+        catch (TaskCanceledException)
         {
             _products = null;
         }

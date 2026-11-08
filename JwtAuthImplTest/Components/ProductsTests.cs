@@ -14,11 +14,12 @@ namespace JwtAuthImplTest.Components
     public class ProductsTests
     {
         private const string ProductsJson =
-            "{\"message\":\"Hola\",\"items\":[\"Teclado\",\"Mouse\"]}";
+            "[{\"id\":1,\"name\":\"Teclado\",\"description\":\"Rojo\",\"price\":89.99}," +
+            "{\"id\":2,\"name\":\"Mouse\",\"description\":\"Óptico\",\"price\":45.5}]";
 
-        private static Bunit.TestContext CreateContext()
+        private static BunitContext CreateContext()
         {
-            var ctx = new Bunit.TestContext();
+            var ctx = new BunitContext();
             var store = new InMemoryTokenStore();
             var http = new HttpClient(new FakeHttpMessageHandler(
                 req => FakeHttpMessageHandler.Json(HttpStatusCode.OK, ProductsJson)))
@@ -35,9 +36,9 @@ namespace JwtAuthImplTest.Components
         public void Products_Anonimo_DeberiaRedirigirAlLogin()
         {
             using var ctx = CreateContext();
-            ctx.AddTestAuthorization(); // no autenticado
+            ctx.AddAuthorization(); // no autenticado
 
-            ctx.RenderComponent<Products>();
+            ctx.Render<Products>();
 
             var nav = ctx.Services.GetRequiredService<NavigationManager>();
             Assert.That(nav.Uri, Does.EndWith("login?returnUrl=products"));
@@ -47,13 +48,14 @@ namespace JwtAuthImplTest.Components
         public void Products_Admin_DeberiaMostrarProductosYSeccionCrear()
         {
             using var ctx = CreateContext();
-            var auth = ctx.AddTestAuthorization();
+            var auth = ctx.AddAuthorization();
             auth.SetAuthorized("admin");
             auth.SetRoles("Admin");
 
-            var cut = ctx.RenderComponent<Products>();
+            var cut = ctx.Render<Products>();
 
             Assert.That(cut.Markup, Does.Contain("Teclado"));
+            Assert.That(cut.Markup, Does.Contain("$89.99"), "el listado autenticado muestra el precio");
             Assert.That(cut.Markup, Does.Contain("Crear producto (solo Admin)"));
         }
 
@@ -61,11 +63,11 @@ namespace JwtAuthImplTest.Components
         public void Products_Usuario_NoDeberiaMostrarSeccionCrear()
         {
             using var ctx = CreateContext();
-            var auth = ctx.AddTestAuthorization();
+            var auth = ctx.AddAuthorization();
             auth.SetAuthorized("user");
             auth.SetRoles("User");
 
-            var cut = ctx.RenderComponent<Products>();
+            var cut = ctx.Render<Products>();
 
             Assert.That(cut.Markup, Does.Contain("Teclado"));
             Assert.That(cut.Markup, Does.Not.Contain("Crear producto (solo Admin)"));

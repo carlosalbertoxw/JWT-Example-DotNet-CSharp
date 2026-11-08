@@ -11,56 +11,47 @@ namespace JwtAuthTest
     public class AuthServiceTests
     {
         private JwtSettings _settings = null!;
+        private ManualTimeProvider _time = null!;
         private ITokenService _tokenService = null!;
         private IRefreshTokenStore _refreshStore = null!;
-        private IUserStore _userStore = null!;
         private AuthService _authService = null!;
 
         [SetUp]
         public void SetUp()
         {
             _settings = TestHelpers.CreateSettings();
-            var hasher = new Pbkdf2PasswordHasher();
+            _time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+            var hasher = new Pbkdf2PasswordHasher(TestHelpers.FastIterations);
             _tokenService = new TokenService(_settings);
             _refreshStore = new InMemoryRefreshTokenStore();
-            _userStore = new InMemoryUserStore(hasher);
 
-            _authService = new AuthService(_userStore, hasher, _tokenService, _refreshStore, _settings);
+            _authService = new AuthService(
+                new InMemoryUserStore(hasher), hasher, _tokenService, _refreshStore, _settings, _time);
         }
 
         [Test]
-        public void Login_DeberiaEmitirTokens_ConCredencialesValidas()
+        public async Task Login_DeberiaEmitirTokens_ConCredencialesValidas()
         {
             AuthResult result = _authService.Login("admin", "Admin123!");
 
             Assert.That(result.Succeeded, Is.True);
-            Assert.That(result.Tokens, Is.Not.Null);
             Assert.That(result.Tokens!.AccessToken, Is.Not.Empty);
             Assert.That(result.Tokens.RefreshToken, Is.Not.Empty);
-            // El access token emitido debe ser válido.
-            Assert.That(_tokenService.ValidateAccessToken(result.Tokens.AccessToken), Is.Not.Null);
+            Assert.That(result.Tokens.ExpiresInSeconds, Is.EqualTo(15 * 60));
+            // El access token emitido debe ser válido y llevar el rol.
+            var principal = await TestHelpers.ValidateAsync(result.Tokens.AccessToken, _settings);
+            Assert.That(principal?.IsInRole("Admin"), Is.True);
         }
 
         [Test]
-        public void Login_DeberiaFallar_ConContrasenaIncorrecta()
+        public void Login_DeberiaFallar_ConContrasenaIncorrectaOUsuarioInexistente()
         {
-            AuthResult result = _authService.Login("admin", "incorrecta");
-
-            Assert.That(result.Succeeded, Is.False);
-            Assert.That(result.Tokens, Is.Null);
-            Assert.That(result.Error, Is.Not.Null);
+            Assert.That(_authService.Login("admin", "incorrecta").Succeeded, Is.False);
+            Assert.That(_authService.Login("fantasma", "lo-que-sea").Succeeded, Is.False);
         }
 
         [Test]
-        public void Login_DeberiaFallar_ConUsuarioInexistente()
-        {
-            AuthResult result = _authService.Login("fantasma", "lo-que-sea");
-
-            Assert.That(result.Succeeded, Is.False);
-        }
-
-        [Test]
-        public void Refresh_DeberiaEmitirNuevosTokens_ConRefreshValido()
+        public void Refresh_DeberiaRotarElToken()
         {
             string refreshToken = _authService.Login("admin", "Admin123!").Tokens!.RefreshToken;
 
@@ -68,35 +59,28 @@ namespace JwtAuthTest
 
             Assert.That(result.Succeeded, Is.True);
             Assert.That(result.Tokens!.RefreshToken, Is.Not.EqualTo(refreshToken));
-        }
-
-        [Test]
-        public void Refresh_DeberiaRevocarElRefreshAnterior_RotacionDeTokens()
-        {
-            string refreshToken = _authService.Login("admin", "Admin123!").Tokens!.RefreshToken;
-
-            _authService.Refresh(refreshToken);
             // El token ya usado no puede volver a utilizarse.
-            AuthResult segundoIntento = _authService.Refresh(refreshToken);
-
-            Assert.That(segundoIntento.Succeeded, Is.False);
+            Assert.That(_authService.Refresh(refreshToken).Succeeded, Is.False);
         }
 
         [Test]
-        public void Refresh_DeberiaFallar_ConRefreshInexistente()
+        public void Refresh_DeberiaFallar_ConRefreshInexistenteOExpirado()
         {
             Assert.That(_authService.Refresh("token-que-no-existe").Succeeded, Is.False);
+
+            string refreshToken = _authService.Login("user", "User123!").Tokens!.RefreshToken;
+            _time.Advance(TimeSpan.FromDays(8));
+
+            Assert.That(_authService.Refresh(refreshToken).Succeeded, Is.False);
         }
 
         [Test]
         public void Refresh_DeberiaRevocarTodaLaFamilia_AlDetectarReuso()
         {
             string r1 = _authService.Login("admin", "Admin123!").Tokens!.RefreshToken;
-
-            // Rotación normal: r1 -> r2.
             string r2 = _authService.Refresh(r1).Tokens!.RefreshToken;
 
-            // Reutilización de r1 (ya revocado): debe fallar y, además, revocar
+            // Reutilización de r1 (ya rotado): debe fallar y, además, revocar
             // toda la familia, dejando r2 también inservible.
             Assert.That(_authService.Refresh(r1).Succeeded, Is.False);
             Assert.That(_authService.Refresh(r2).Succeeded, Is.False,
@@ -104,38 +88,42 @@ namespace JwtAuthTest
         }
 
         [Test]
-        public void Logout_DeberiaRevocarElRefreshToken_DelPropietario()
+        public async Task Refresh_Concurrente_SoloUnaPeticionDeberiaGanar()
         {
-            AuthResult login = _authService.Login("admin", "Admin123!");
-            string refreshToken = login.Tokens!.RefreshToken;
-            Guid adminId = _userStore.FindByUsername("admin")!.Id;
+            string refreshToken = _authService.Login("user", "User123!").Tokens!.RefreshToken;
+            using var start = new ManualResetEventSlim(false);
 
-            bool loggedOut = _authService.Logout(refreshToken, adminId);
+            Task<bool>[] attempts = Enumerable.Range(0, 8)
+                .Select(_ => Task.Run(() =>
+                {
+                    start.Wait();
+                    return _authService.Refresh(refreshToken).Succeeded;
+                }))
+                .ToArray();
+            start.Set();
+            bool[] results = await Task.WhenAll(attempts);
 
-            Assert.That(loggedOut, Is.True);
-            // Tras el logout, el refresh token ya no sirve.
-            Assert.That(_authService.Refresh(refreshToken).Succeeded, Is.False);
+            Assert.That(results.Count(ok => ok), Is.EqualTo(1),
+                "solo una petición puede canjear el mismo refresh token");
         }
 
         [Test]
-        public void Logout_DeberiaRetornarFalse_ConRefreshInexistente()
+        public void Logout_DeberiaCerrarSoloLaSesionDelTokenEnviado()
         {
-            Guid adminId = _userStore.FindByUsername("admin")!.Id;
+            string phone = _authService.Login("user", "User123!").Tokens!.RefreshToken;
+            string laptop = _authService.Login("user", "User123!").Tokens!.RefreshToken;
 
-            Assert.That(_authService.Logout("inexistente", adminId), Is.False);
+            _authService.Logout(phone);
+
+            Assert.That(_authService.Refresh(laptop).Succeeded, Is.True,
+                "la otra sesión debe seguir activa tras el logout");
+            Assert.That(_refreshStore.Find(phone)!.IsRevoked, Is.True);
         }
 
         [Test]
-        public void Logout_DeberiaRetornarFalse_SiElTokenEsDeOtroUsuario()
+        public void Logout_NoDeberiaFallar_ConRefreshInexistente()
         {
-            // El refresh token pertenece a "admin"...
-            string refreshToken = _authService.Login("admin", "Admin123!").Tokens!.RefreshToken;
-            Guid otroUsuarioId = _userStore.FindByUsername("user")!.Id;
-
-            // ...pero "user" intenta revocarlo: no debe permitirse.
-            Assert.That(_authService.Logout(refreshToken, otroUsuarioId), Is.False);
-            Assert.That(_authService.Refresh(refreshToken).Succeeded, Is.True,
-                "el token de admin debe seguir vigente tras el intento ajeno");
+            Assert.That(() => _authService.Logout("inexistente"), Throws.Nothing);
         }
     }
 }

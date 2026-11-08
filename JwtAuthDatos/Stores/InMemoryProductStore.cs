@@ -1,24 +1,31 @@
 using System.Collections.Concurrent;
+using JwtAuthDatos.Models;
 
 namespace JwtAuthDatos.Stores
 {
     /// <summary>
     /// Implementación en memoria de <see cref="IProductStore"/>. Se siembra con
-    /// un catálogo de ejemplo. En producción se reemplazaría por una
-    /// persistencia real conservando el mismo contrato.
+    /// el catálogo de ejemplo común a todos los ejemplos JWT.
     /// </summary>
     public class InMemoryProductStore : IProductStore
     {
-        // Lista concurrente para soportar lecturas y escrituras simultáneas.
-        private readonly ConcurrentQueue<string> _products = new(
-            new[] { "Teclado", "Mouse", "Monitor", "Webcam", "Audífonos" });
+        private readonly ConcurrentQueue<Product> _products = new(
+        [
+            new Product(1, "Teclado mecánico", "Switches rojos, retroiluminado", 89.99m),
+            new Product(2, "Mouse inalámbrico", "Sensor óptico de 16000 DPI", 45.50m),
+            new Product(3, "Monitor 27\"", "Panel IPS, 144 Hz", 320.00m),
+            new Product(4, "Dock USB-C", "HDMI doble, carga de 100 W", 129.00m)
+        ]);
 
-        public IReadOnlyList<string> GetAll() => _products.ToArray();
+        private int _lastId = 4;
 
-        public void Add(string name)
+        public IReadOnlyList<Product> GetAll() => _products.ToArray();
+
+        public Product Add(string name, string description, decimal price)
         {
-            if (!string.IsNullOrWhiteSpace(name))
-                _products.Enqueue(name);
+            var product = new Product(Interlocked.Increment(ref _lastId), name, description, price);
+            _products.Enqueue(product);
+            return product;
         }
     }
 }

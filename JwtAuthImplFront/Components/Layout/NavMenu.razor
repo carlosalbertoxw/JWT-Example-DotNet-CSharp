@@ -34,20 +34,20 @@
             <Authorized>
                 <div class="nav-item px-3">
                     <span class="nav-link">
-                        <span class="bi bi-person-fill-nav-menu" aria-hidden="true"></span>
+                        <span class="bi" aria-hidden="true"></span>
                         @context.User.Identity?.Name
                     </span>
                 </div>
                 <div class="nav-item px-3">
                     <button class="nav-link btn btn-link text-start" @onclick="LogoutAsync">
-                        <span class="bi bi-arrow-bar-left-nav-menu" aria-hidden="true"></span> Cerrar sesión
+                        <span class="bi" aria-hidden="true"></span> Cerrar sesión
                     </button>
                 </div>
             </Authorized>
             <NotAuthorized>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="login">
-                        <span class="bi bi-lock-nav-menu" aria-hidden="true"></span> Iniciar sesión
+                        <span class="bi" aria-hidden="true"></span> Iniciar sesión
                     </NavLink>
                 </div>
             </NotAuthorized>

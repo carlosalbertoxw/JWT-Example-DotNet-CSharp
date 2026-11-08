@@ -1,4 +1,5 @@
 @page "/products"
+@using System.Globalization
 @inject ProductsApiClient ProductsApi
 @inject AuthenticationStateProvider AuthState
 @inject NavigationManager Navigation
@@ -7,7 +8,8 @@
 
 <h1>Productos</h1>
 
-<p>Esta página está protegida (solo usuarios autenticados) y consume los endpoints de la JwtAuthApi.</p>
+<p>Esta página está protegida (solo usuarios autenticados) y consume <code>GET /api/products</code>,
+que a diferencia del catálogo público sí incluye el <strong>precio</strong>.</p>
 
 @if (_checkingAuth)
 {
@@ -25,13 +27,21 @@ else
     }
     else
     {
-        <p>@_products.Message</p>
-        <ul>
-            @foreach (var item in _products.Items)
-            {
-                <li>@item</li>
-            }
-        </ul>
+        <table class="table">
+            <thead>
+                <tr><th>Producto</th><th>Descripción</th><th>Precio</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var product in _products)
+                {
+                    <tr>
+                        <td>@product.Name</td>
+                        <td>@product.Description</td>
+                        <td>@product.Price.ToString("C", Money)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
     }
 
     <hr />
@@ -39,9 +49,19 @@ else
     <AuthorizeView Roles="Admin">
         <Authorized>
             <h4>Crear producto (solo Admin)</h4>
-            <div class="input-group mb-2" style="max-width: 420px;">
-                <input class="form-control" placeholder="Nombre del producto" @bind="_newProduct" />
-                <button class="btn btn-primary" @onclick="CreateProductAsync" disabled="@_creating">Crear</button>
+            <div class="row g-2 mb-2" style="max-width: 720px;">
+                <div class="col-md-4">
+                    <input class="form-control" placeholder="Nombre" maxlength="100" @bind="_newName" />
+                </div>
+                <div class="col-md-4">
+                    <input class="form-control" placeholder="Descripción" maxlength="500" @bind="_newDescription" />
+                </div>
+                <div class="col-md-2">
+                    <input class="form-control" type="number" min="0" step="0.01" placeholder="Precio" @bind="_newPrice" />
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary w-100" @onclick="CreateProductAsync" disabled="@_creating">Crear</button>
+                </div>
             </div>
         </Authorized>
         <NotAuthorized>
@@ -56,10 +76,14 @@ else
 }
 
 @code {
-    private ProductsResponse? _products;
+    private static readonly CultureInfo Money = CultureInfo.GetCultureInfo("en-US");
+
+    private IReadOnlyList<Product>? _products;
     private bool _checkingAuth = true;
     private bool _loading = true;
-    private string _newProduct = string.Empty;
+    private string _newName = string.Empty;
+    private string _newDescription = string.Empty;
+    private decimal? _newPrice;
     private bool _creating;
     private string? _createMessage;
 
@@ -67,6 +91,7 @@ else
     {
         // La autorización se hace en el cliente: este código corre dentro del
         // circuito interactivo, donde sí hay acceso al token (ProtectedLocalStorage).
+        // La API vuelve a validar el token y el rol en cada petición.
         var state = await AuthState.GetAuthenticationStateAsync();
         if (state.User.Identity?.IsAuthenticated != true)
         {
@@ -87,26 +112,36 @@ else
 
     private async Task CreateProductAsync()
     {
-        if (string.IsNullOrWhiteSpace(_newProduct))
+        if (string.IsNullOrWhiteSpace(_newName) || _newPrice is null or < 0)
+        {
+            _createMessage = "Escribe un nombre y un precio mayor o igual a cero.";
             return;
+        }
 
         _creating = true;
         _createMessage = null;
 
-        var status = await ProductsApi.CreateProductAsync(_newProduct);
+        string name = _newName.Trim();
+        var status = await ProductsApi.CreateProductAsync(
+            new NewProduct(name, _newDescription.Trim(), _newPrice.Value));
         _createMessage = status switch
         {
-            System.Net.HttpStatusCode.Created => $"Producto '{_newProduct}' creado correctamente.",
+            System.Net.HttpStatusCode.Created => $"Producto '{name}' creado correctamente.",
             System.Net.HttpStatusCode.Forbidden => "No tienes permisos (rol Admin requerido).",
             System.Net.HttpStatusCode.Unauthorized => "Sesión expirada. Vuelve a iniciar sesión.",
+            System.Net.HttpStatusCode.BadRequest => "Datos inválidos: revisa el nombre y el precio.",
             _ => $"Respuesta inesperada de la API: {(int)status}."
         };
 
-        _newProduct = string.Empty;
         _creating = false;
 
-        // Tras un alta exitosa, recarga la lista para que el nuevo producto se vea de inmediato.
+        // Tras un alta exitosa, limpia el formulario y recarga la lista.
         if (status == System.Net.HttpStatusCode.Created)
+        {
+            _newName = string.Empty;
+            _newDescription = string.Empty;
+            _newPrice = null;
             await LoadProductsAsync();
+        }
     }
 }

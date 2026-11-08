@@ -45,7 +45,7 @@ namespace JwtAuthImpl.Auth
         /// <summary>
         /// Indica si el token está expirado (o no tiene claim "exp").
         /// </summary>
-        public static bool IsExpired(string jwt, int skewSeconds = 0)
+        public static bool IsExpired(string jwt)
         {
             try
             {
@@ -54,7 +54,7 @@ namespace JwtAuthImpl.Auth
                     if (claim.Type == "exp" && long.TryParse(claim.Value, out long exp))
                     {
                         DateTimeOffset expiry = DateTimeOffset.FromUnixTimeSeconds(exp);
-                        return DateTimeOffset.UtcNow >= expiry.AddSeconds(-skewSeconds);
+                        return DateTimeOffset.UtcNow >= expiry;
                     }
                 }
 

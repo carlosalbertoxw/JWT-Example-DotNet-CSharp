@@ -10,9 +10,9 @@ namespace JwtAuthImplTest.Components
     [TestFixture]
     public class NavMenuTests
     {
-        private static Bunit.TestContext CreateContext()
+        private static BunitContext CreateContext()
         {
-            var ctx = new Bunit.TestContext();
+            var ctx = new BunitContext();
 
             // Servicios que NavMenu inyecta. El proveedor concreto solo se usa en
             // el handler de logout (no durante el render), así que basta con que
@@ -34,9 +34,9 @@ namespace JwtAuthImplTest.Components
         public void NavMenu_Anonimo_DeberiaMostrarIniciarSesion()
         {
             using var ctx = CreateContext();
-            ctx.AddTestAuthorization(); // por defecto: no autenticado
+            ctx.AddAuthorization(); // por defecto: no autenticado
 
-            var cut = ctx.RenderComponent<NavMenu>();
+            var cut = ctx.Render<NavMenu>();
 
             Assert.That(cut.Markup, Does.Contain("Iniciar sesión"));
             Assert.That(cut.Markup, Does.Not.Contain("Cerrar sesión"));
@@ -46,10 +46,10 @@ namespace JwtAuthImplTest.Components
         public void NavMenu_Autenticado_DeberiaMostrarUsuarioYCerrarSesion()
         {
             using var ctx = CreateContext();
-            var auth = ctx.AddTestAuthorization();
+            var auth = ctx.AddAuthorization();
             auth.SetAuthorized("admin");
 
-            var cut = ctx.RenderComponent<NavMenu>();
+            var cut = ctx.Render<NavMenu>();
 
             Assert.That(cut.Markup, Does.Contain("admin"));
             Assert.That(cut.Markup, Does.Contain("Cerrar sesión"));
@@ -60,9 +60,9 @@ namespace JwtAuthImplTest.Components
         public void NavMenu_DeberiaTenerEnlaceAlCatalogoPublico()
         {
             using var ctx = CreateContext();
-            ctx.AddTestAuthorization();
+            ctx.AddAuthorization();
 
-            var cut = ctx.RenderComponent<NavMenu>();
+            var cut = ctx.Render<NavMenu>();
 
             Assert.That(cut.Markup, Does.Contain("Catálogo público"));
             Assert.That(cut.Markup, Does.Contain("href=\"catalog\""));

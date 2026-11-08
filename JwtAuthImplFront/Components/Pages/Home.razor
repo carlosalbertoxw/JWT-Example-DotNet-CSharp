@@ -10,7 +10,7 @@
     <Authorized>
         <div class="alert alert-success">
             Sesión iniciada como <strong>@context.User.Identity?.Name</strong>.
-            Roles: @string.Join(", ", context.User.FindAll(ClaimTypes.Role).Select(c => c.Value))
+            Rol: @context.User.FindFirst("role")?.Value
         </div>
         <a class="btn btn-primary" href="products">Ir a productos</a>
     </Authorized>

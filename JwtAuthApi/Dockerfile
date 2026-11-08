@@ -3,10 +3,11 @@
 # porque este proyecto referencia a los proyectos hermanos JwtAuth y JwtAuthDatos.
 
 # --- Etapa de compilación ---
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-# Primero solo los .csproj para aprovechar la caché de restore.
+# Primero solo los .csproj (y la config común) para aprovechar la caché de restore.
+COPY Directory.Build.props ./
 COPY JwtAuth/JwtAuth.csproj JwtAuth/
 COPY JwtAuthDatos/JwtAuthDatos.csproj JwtAuthDatos/
 COPY JwtAuthApi/JwtAuthApi.csproj JwtAuthApi/
@@ -19,10 +20,14 @@ COPY JwtAuthApi/ JwtAuthApi/
 RUN dotnet publish JwtAuthApi/JwtAuthApi.csproj -c Release -o /app --no-restore
 
 # --- Etapa de ejecución ---
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app .
 
-# La imagen aspnet:8.0 ya escucha en el puerto 8080 por defecto (ASPNETCORE_HTTP_PORTS).
+# Usuario sin privilegios que ya trae la imagen de .NET: si alguien explotara
+# la app, no tendría root en el contenedor.
+USER $APP_UID
+
+# La imagen aspnet:10.0 ya escucha en el puerto 8080 por defecto (ASPNETCORE_HTTP_PORTS).
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "JwtAuthApi.dll"]

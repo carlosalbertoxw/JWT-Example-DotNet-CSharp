@@ -11,16 +11,15 @@ namespace JwtAuth.Services
 
         /// <summary>
         /// Renueva el par de tokens a partir de un refresh token válido,
-        /// rotando (revocando) el refresh token anterior. Si se presenta un
-        /// refresh token ya revocado (reutilización), revoca toda la familia de
-        /// tokens del usuario como medida contra robo de tokens.
+        /// canjeándolo de forma atómica (rotación). Si se presenta un refresh
+        /// token ya usado (reutilización), revoca toda la familia de tokens del
+        /// usuario como medida contra robo de tokens.
         /// </summary>
         AuthResult Refresh(string refreshToken);
 
         /// <summary>
-        /// Revoca el refresh token indicado (cierre de sesión), siempre que
-        /// pertenezca al usuario <paramref name="userId"/>. Devuelve false si el
-        /// token no existe o no es de ese usuario.
+        /// Revoca el refresh token indicado: cierra solo esa sesión (las de otros
+        /// dispositivos siguen activas). Si no existe, no hace nada.
         /// </summary>
         /// <remarks>
         /// El access token ya emitido NO se invalida aquí: por la naturaleza
@@ -28,6 +27,6 @@ namespace JwtAuth.Services
         /// tiempo de vida corto. Para un corte inmediato haría falta una
         /// deny-list de identificadores de token (jti).
         /// </remarks>
-        bool Logout(string refreshToken, Guid userId);
+        void Logout(string refreshToken);
     }
 }

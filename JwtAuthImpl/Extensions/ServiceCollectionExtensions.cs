@@ -29,7 +29,12 @@ namespace JwtAuthImpl.Extensions
             bool acceptAnyServerCertificate = false)
         {
             // Configuración común a todos los clientes tipados hacia la API.
-            void ConfigureClient(HttpClient client) => client.BaseAddress = new Uri(apiBaseUrl);
+            void ConfigureClient(HttpClient client)
+            {
+                client.BaseAddress = new Uri(apiBaseUrl);
+                // Si la API no responde, fallar rápido en vez de esperar los 100 s por defecto.
+                client.Timeout = TimeSpan.FromSeconds(10);
+            }
 
             HttpMessageHandler ConfigureHandler()
             {

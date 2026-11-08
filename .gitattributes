@@ -1,0 +1,3 @@
+# Finales de línea LF en el repositorio y en las copias de trabajo, en cualquier SO
+# (coincide con .editorconfig, así `dotnet format` da el mismo resultado en Windows y en CI).
+* text=auto eol=lf

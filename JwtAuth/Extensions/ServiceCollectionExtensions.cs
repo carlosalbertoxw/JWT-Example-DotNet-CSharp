@@ -3,6 +3,7 @@ using JwtAuth.Security;
 using JwtAuth.Services;
 using JwtAuth.Tokens;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace JwtAuth.Extensions
 {
@@ -13,23 +14,23 @@ namespace JwtAuth.Extensions
     /// <remarks>
     /// Esta extensión solo registra la lógica de validación/emisión (hasher,
     /// servicio de tokens y servicio de autenticación). Los almacenes de datos
-    /// (usuarios y refresh tokens) los provee la capa de datos mediante
-    /// <c>AddJwtAuthData()</c> en el proyecto JwtAuthDatos.
+    /// (usuarios, refresh tokens e intentos) los provee la capa de datos
+    /// mediante <c>AddJwtAuthData()</c> en el proyecto JwtAuthDatos.
     /// </remarks>
     public static class ServiceCollectionExtensions
     {
         /// <summary>
         /// Registra el sistema de autenticación JWT (servicio de tokens, hasher
-        /// y servicio de autenticación) usando la configuración provista. Los
-        /// almacenes de datos deben registrarse aparte con <c>AddJwtAuthData()</c>.
+        /// y servicio de autenticación) usando la configuración provista.
         /// </summary>
         public static IServiceCollection AddJwtAuth(this IServiceCollection services, JwtSettings settings)
         {
             ArgumentNullException.ThrowIfNull(settings);
 
+            services.TryAddSingleton(TimeProvider.System);
             services.AddSingleton(settings);
-            services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
-            services.AddSingleton<ITokenService, TokenService>();
+            services.AddSingleton<IPasswordHasher>(_ => new Pbkdf2PasswordHasher());
+            services.AddSingleton<ITokenService>(sp => new TokenService(settings, sp.GetRequiredService<TimeProvider>()));
             services.AddScoped<IAuthService, AuthService>();
 
             return services;

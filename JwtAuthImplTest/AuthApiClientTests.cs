@@ -8,7 +8,7 @@ namespace JwtAuthImplTest
     public class AuthApiClientTests
     {
         private const string LoginJson =
-            "{\"accessToken\":\"a1\",\"refreshToken\":\"r1\",\"tokenType\":\"Bearer\"}";
+            "{\"access_token\":\"a1\",\"refresh_token\":\"r1\",\"token_type\":\"Bearer\",\"expires_in\":900}";
 
         private static (AuthApiClient client, InMemoryTokenStore store) Build(
             FakeHttpMessageHandler handler)
@@ -57,6 +57,30 @@ namespace JwtAuthImplTest
             await client.LogoutAsync();
 
             Assert.That(store.AccessToken, Is.Null);
+            Assert.That(store.RefreshToken, Is.Null);
+        }
+
+        [Test]
+        public async Task LogoutAsync_DeberiaEnviarElRefreshToken_SinAccessToken()
+        {
+            HttpRequestMessage? captured = null;
+            string? body = null;
+            var handler = new FakeHttpMessageHandler(req =>
+            {
+                captured = req;
+                body = req.Content!.ReadAsStringAsync().Result;
+                return FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"message\":\"ok\"}");
+            });
+            var (client, store) = Build(handler);
+            store.AccessToken = "a1-expirado";
+            store.RefreshToken = "r1";
+
+            await client.LogoutAsync();
+
+            Assert.That(captured!.RequestUri!.AbsolutePath, Is.EqualTo("/api/auth/logout"));
+            Assert.That(captured.Headers.Authorization, Is.Null,
+                "el logout no debe depender de un access token vigente");
+            Assert.That(body, Does.Contain("\"refresh_token\":\"r1\""));
             Assert.That(store.RefreshToken, Is.Null);
         }
     }

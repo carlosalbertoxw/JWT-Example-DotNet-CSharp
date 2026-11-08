@@ -6,6 +6,9 @@ namespace JwtAuth.Models
     /// </summary>
     public class AppUser
     {
+        public const string AdminRole = "Admin";
+        public const string UserRole = "User";
+
         public Guid Id { get; set; } = Guid.NewGuid();
 
         public string Username { get; set; } = string.Empty;
@@ -13,7 +16,7 @@ namespace JwtAuth.Models
         /// <summary>Hash de la contraseña (nunca se almacena en texto plano).</summary>
         public string PasswordHash { get; set; } = string.Empty;
 
-        /// <summary>Roles asignados al usuario, usados para autorización.</summary>
-        public IReadOnlyList<string> Roles { get; set; } = new List<string>();
+        /// <summary>Rol único del usuario ("Admin" o "User"), usado para autorización.</summary>
+        public string Role { get; set; } = UserRole;
     }
 }

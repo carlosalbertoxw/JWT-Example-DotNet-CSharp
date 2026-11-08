@@ -25,14 +25,14 @@ namespace JwtAuthDatos.Stores
             {
                 Username = "admin",
                 PasswordHash = passwordHasher.Hash("Admin123!"),
-                Roles = new[] { "Admin", "User" }
+                Role = AppUser.AdminRole
             });
 
             Seed(new AppUser
             {
                 Username = "user",
                 PasswordHash = passwordHasher.Hash("User123!"),
-                Roles = new[] { "User" }
+                Role = AppUser.UserRole
             });
         }
 

@@ -12,88 +12,83 @@ namespace JwtAuthTest
         {
             Id = Guid.NewGuid(),
             Username = "carlos",
-            Roles = new[] { "Admin", "User" }
+            Role = AppUser.AdminRole
         };
 
         [Test]
-        public void CreateAccessToken_DeberiaSerValidadoCorrectamente()
+        public async Task CreateAccessToken_DeberiaSerValidadoConLosClaimsDelContrato()
         {
             var service = new TokenService(TestHelpers.CreateSettings());
             AppUser user = CreateUser();
 
-            (string token, DateTime expires) = service.CreateAccessToken(user);
-            ClaimsPrincipal? principal = service.ValidateAccessToken(token);
+            string token = service.CreateAccessToken(user);
+            ClaimsPrincipal? principal = await TestHelpers.ValidateAsync(token, TestHelpers.CreateSettings());
 
             Assert.That(principal, Is.Not.Null);
-            Assert.That(expires, Is.GreaterThan(DateTime.UtcNow));
-            Assert.That(principal!.FindFirst("username")?.Value, Is.EqualTo("carlos"));
-            Assert.That(principal.FindFirst(ClaimTypes.NameIdentifier)?.Value, Is.EqualTo(user.Id.ToString()));
+            Assert.That(principal!.Identity?.Name, Is.EqualTo("carlos"));
+            Assert.That(principal.FindFirst("sub")?.Value, Is.EqualTo(user.Id.ToString()));
+            Assert.That(principal.FindFirst("role")?.Value, Is.EqualTo("Admin"));
+            Assert.That(principal.IsInRole("Admin"), Is.True);
         }
 
         [Test]
-        public void ValidateAccessToken_DeberiaIncluirLosRoles()
+        public async Task ValidateAccessToken_DeberiaRetornarNull_ConTokenManipulado()
         {
             var service = new TokenService(TestHelpers.CreateSettings());
-
-            (string token, _) = service.CreateAccessToken(CreateUser());
-            ClaimsPrincipal principal = service.ValidateAccessToken(token)!;
-
-            string[] roles = principal.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray();
-            Assert.That(roles, Is.EquivalentTo(new[] { "Admin", "User" }));
-        }
-
-        [Test]
-        public void ValidateAccessToken_DeberiaRetornarNull_ConTokenManipulado()
-        {
-            var service = new TokenService(TestHelpers.CreateSettings());
-            (string token, _) = service.CreateAccessToken(CreateUser());
+            string token = service.CreateAccessToken(CreateUser());
 
             // Se altera el último carácter para invalidar la firma.
             string tampered = token[..^2] + (token[^1] == 'A' ? 'B' : 'A');
 
-            Assert.That(service.ValidateAccessToken(tampered), Is.Null);
+            Assert.That(await TestHelpers.ValidateAsync(tampered, TestHelpers.CreateSettings()), Is.Null);
         }
 
         [Test]
-        public void ValidateAccessToken_DeberiaRetornarNull_ConTokenExpirado()
+        public async Task ValidateAccessToken_DeberiaRetornarNull_ConTokenExpirado()
         {
-            // Access token de 0 minutos: ya nace expirado.
-            var service = new TokenService(TestHelpers.CreateSettings(accessTokenMinutes: 0));
-            (string token, _) = service.CreateAccessToken(CreateUser());
+            // Emitido hace una hora con 15 minutos de vida.
+            var past = new ManualTimeProvider(DateTimeOffset.UtcNow.AddHours(-1));
+            var emisor = new TokenService(TestHelpers.CreateSettings(), past);
+            string token = emisor.CreateAccessToken(CreateUser());
 
-            Assert.That(service.ValidateAccessToken(token), Is.Null);
+            Assert.That(await TestHelpers.ValidateAsync(token, TestHelpers.CreateSettings()), Is.Null);
         }
 
         [Test]
-        public void ValidateAccessToken_DeberiaRetornarNull_ConOtraClaveDeFirma()
+        public async Task ValidateAccessToken_DeberiaRetornarNull_ConOtraClaveEmisorOAudiencia()
         {
-            var emisor = new TokenService(TestHelpers.CreateSettings());
-            (string token, _) = emisor.CreateAccessToken(CreateUser());
 
-            var otraConfig = TestHelpers.CreateSettings();
-            otraConfig.SigningKey = "una-clave-de-firma-completamente-distinta-0987654321";
-            var validador = new TokenService(otraConfig);
+            JwtSettings otraClave = TestHelpers.CreateSettings();
+            otraClave.SigningKey = "una-clave-de-firma-completamente-distinta-0987654321";
+            JwtSettings otroEmisor = TestHelpers.CreateSettings();
+            otroEmisor.Issuer = "otro";
+            JwtSettings otraAudiencia = TestHelpers.CreateSettings();
+            otraAudiencia.Audience = "otra";
 
-            Assert.That(validador.ValidateAccessToken(token), Is.Null);
+            foreach (JwtSettings settings in new[] { otraClave, otroEmisor, otraAudiencia })
+            {
+                string token = new TokenService(settings).CreateAccessToken(CreateUser());
+                Assert.That(await TestHelpers.ValidateAsync(token, TestHelpers.CreateSettings()), Is.Null);
+            }
         }
 
         [Test]
-        public void ValidateAccessToken_DeberiaRetornarNull_ConTextoNoToken()
+        public async Task ValidateAccessToken_DeberiaRetornarNull_ConTextoNoToken()
         {
             var service = new TokenService(TestHelpers.CreateSettings());
 
-            Assert.That(service.ValidateAccessToken("no-es-un-jwt"), Is.Null);
+            Assert.That(await TestHelpers.ValidateAsync("no-es-un-jwt", TestHelpers.CreateSettings()), Is.Null);
         }
 
         [Test]
-        public void GenerateRefreshToken_DeberiaProducirValoresUnicos()
+        public void GenerateRefreshToken_DeberiaProducirValoresUnicosDe64Hex()
         {
             var service = new TokenService(TestHelpers.CreateSettings());
 
             string a = service.GenerateRefreshToken();
             string b = service.GenerateRefreshToken();
 
-            Assert.That(a, Is.Not.Empty);
+            Assert.That(a, Has.Length.EqualTo(64));
             Assert.That(a, Is.Not.EqualTo(b));
         }
 

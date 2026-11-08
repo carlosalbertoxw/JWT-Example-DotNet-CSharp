@@ -3,24 +3,21 @@ namespace JwtAuth.Models
     /// <summary>
     /// Refresh token persistido del lado del servidor. Permite emitir nuevos
     /// access tokens sin volver a pedir credenciales y poder revocarlos
-    /// (logout / rotación) de forma centralizada.
+    /// (logout / rotación) de forma centralizada. El almacén lo indexa por el
+    /// hash del valor: un volcado no permite suplantar sesiones.
     /// </summary>
     public class RefreshToken
     {
-        /// <summary>Valor opaco y aleatorio del token.</summary>
-        public string Token { get; set; } = string.Empty;
-
         /// <summary>Usuario propietario del token.</summary>
-        public Guid UserId { get; set; }
+        public Guid UserId { get; init; }
 
-        public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
-
-        public DateTime ExpiresAtUtc { get; set; }
+        public DateTime ExpiresAtUtc { get; init; }
 
         /// <summary>Fecha de revocación; null si sigue vigente.</summary>
         public DateTime? RevokedAtUtc { get; set; }
 
-        /// <summary>Indica si el token aún puede utilizarse.</summary>
-        public bool IsActive => RevokedAtUtc is null && DateTime.UtcNow < ExpiresAtUtc;
+        public bool IsRevoked => RevokedAtUtc is not null;
+
+        public bool IsExpired(DateTime nowUtc) => nowUtc >= ExpiresAtUtc;
     }
 }

@@ -1,3 +1,5 @@
+using JwtAuthDatos.Models;
+
 namespace JwtAuthDatos.Stores
 {
     /// <summary>
@@ -7,9 +9,9 @@ namespace JwtAuthDatos.Stores
     public interface IProductStore
     {
         /// <summary>Devuelve todos los productos del catálogo.</summary>
-        IReadOnlyList<string> GetAll();
+        IReadOnlyList<Product> GetAll();
 
-        /// <summary>Agrega un producto al catálogo.</summary>
-        void Add(string name);
+        /// <summary>Agrega un producto (el id lo asigna el almacén) y lo devuelve.</summary>
+        Product Add(string name, string description, decimal price);
     }
 }

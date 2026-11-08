@@ -6,12 +6,11 @@ namespace JwtAuth.Models
     /// </summary>
     public class TokenPair
     {
-        public string AccessToken { get; set; } = string.Empty;
+        public string AccessToken { get; init; } = string.Empty;
 
-        public DateTime AccessTokenExpiresAtUtc { get; set; }
+        public string RefreshToken { get; init; } = string.Empty;
 
-        public string RefreshToken { get; set; } = string.Empty;
-
-        public DateTime RefreshTokenExpiresAtUtc { get; set; }
+        /// <summary>Segundos de vida del access token.</summary>
+        public int ExpiresInSeconds { get; init; }
     }
 }

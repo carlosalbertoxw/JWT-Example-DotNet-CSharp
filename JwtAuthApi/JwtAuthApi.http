@@ -1,10 +1,10 @@
 @JwtAuthApi_HostAddress = http://localhost:5274
 
-### Endpoint público (sin token)
+### Endpoint público (sin token): productos sin precio
 GET {{JwtAuthApi_HostAddress}}/api/products/public
 Accept: application/json
 
-### Login -> devuelve accessToken y refreshToken
+### Login -> devuelve access_token y refresh_token
 # @name login
 POST {{JwtAuthApi_HostAddress}}/api/auth/login
 Content-Type: application/json
@@ -14,36 +14,42 @@ Content-Type: application/json
   "password": "Admin123!"
 }
 
-### Endpoint protegido usando el access token del login
+### Endpoint protegido usando el access token del login (incluye el precio)
 GET {{JwtAuthApi_HostAddress}}/api/products
-Authorization: Bearer {{login.response.body.accessToken}}
+Authorization: Bearer {{login.response.body.access_token}}
 
 ### Usuario autenticado (claims del token)
 GET {{JwtAuthApi_HostAddress}}/api/auth/me
-Authorization: Bearer {{login.response.body.accessToken}}
+Authorization: Bearer {{login.response.body.access_token}}
 
 ### Crear producto (solo rol Admin)
 POST {{JwtAuthApi_HostAddress}}/api/products
-Authorization: Bearer {{login.response.body.accessToken}}
+Authorization: Bearer {{login.response.body.access_token}}
 Content-Type: application/json
 
-"Tablet"
+{
+  "name": "Tablet",
+  "description": "10 pulgadas",
+  "price": 199.99
+}
 
 ### Refresh -> rota el par de tokens
 POST {{JwtAuthApi_HostAddress}}/api/auth/refresh
 Content-Type: application/json
 
 {
-  "refreshToken": "{{login.response.body.refreshToken}}"
+  "refresh_token": "{{login.response.body.refresh_token}}"
 }
 
-### Logout -> revoca el refresh token
+### Logout -> revoca el refresh token (no requiere access token)
 POST {{JwtAuthApi_HostAddress}}/api/auth/logout
-Authorization: Bearer {{login.response.body.accessToken}}
 Content-Type: application/json
 
 {
-  "refreshToken": "{{login.response.body.refreshToken}}"
+  "refresh_token": "{{login.response.body.refresh_token}}"
 }
+
+### Health check
+GET {{JwtAuthApi_HostAddress}}/health
 
 ###

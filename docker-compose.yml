@@ -16,11 +16,18 @@ services:
     ports:
       - "5274:8080"
     environment:
-      # Development habilita Swagger y desactiva la guardia de clave de arranque.
-      ASPNETCORE_ENVIRONMENT: Development
-      # Clave de firma JWT. Cámbiela por una propia (>= 32 bytes) fuera de local.
-      # El doble guion bajo (__) mapea a la sección Jwt:SigningKey de la config.
-      Jwt__SigningKey: "clave-de-desarrollo-solo-local-no-usar-en-produccion-1234567890"
+      # Development habilita Swagger UI. Ninguna clave se versiona: si
+      # JWT_SIGNING_KEY no está definida (p. ej. en un archivo .env), la API
+      # genera una aleatoria al arrancar. Fuera de Development es obligatoria.
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:-}
+    healthcheck:
+      # La imagen de .NET no trae curl: se consulta /health con bash y /dev/tcp.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /health HTTP/1.0\r\n\r\n' >&3 && grep -q ' 200 ' <&3"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
     restart: unless-stopped
 
   front:
@@ -30,10 +37,19 @@ services:
     ports:
       - "5070:8080"
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
       # El front (Blazor Server) llama a la API desde dentro del contenedor,
       # por eso usa el DNS del servicio de compose y no localhost.
       ApiBaseUrl: "http://api:8080"
+      # Claves de Data Protection persistidas en un volumen: así reiniciar el
+      # contenedor no invalida los tokens cifrados que guarda el navegador.
+      DataProtection__KeysPath: /home/app/keys
+    volumes:
+      - front-keys:/home/app/keys
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  front-keys:

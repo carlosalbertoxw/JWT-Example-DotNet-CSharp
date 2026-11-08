@@ -11,13 +11,13 @@ namespace JwtAuthImplTest.Components
     [TestFixture]
     public class LoginTests
     {
-        private static Bunit.TestContext CreateContext(HttpStatusCode loginStatus)
+        private static BunitContext CreateContext(HttpStatusCode loginStatus)
         {
-            var ctx = new Bunit.TestContext();
+            var ctx = new BunitContext();
             var store = new InMemoryTokenStore();
 
             string loginJson =
-                $"{{\"accessToken\":\"{TestJwt.Create("admin", new[] { "Admin" })}\",\"refreshToken\":\"r1\"}}";
+                $"{{\"access_token\":\"{TestJwt.Create("admin", "Admin")}\",\"refresh_token\":\"r1\"}}";
 
             var http = new HttpClient(new FakeHttpMessageHandler(req =>
                 loginStatus == HttpStatusCode.OK
@@ -33,15 +33,20 @@ namespace JwtAuthImplTest.Components
             return ctx;
         }
 
+        private static void Submit(IRenderedComponent<Login> cut, string password)
+        {
+            cut.Find("input[autocomplete=username]").Change("admin");
+            cut.Find("input[autocomplete=current-password]").Change(password);
+            cut.Find("form").Submit();
+        }
+
         [Test]
         public void Login_ConCredencialesValidas_DeberiaNavegarAProductos()
         {
             using var ctx = CreateContext(HttpStatusCode.OK);
-            var cut = ctx.RenderComponent<Login>();
+            var cut = ctx.Render<Login>();
 
-            cut.Find("input[autocomplete=username]").Change("admin");
-            cut.Find("input[autocomplete=current-password]").Change("Admin123!");
-            cut.Find("form").Submit();
+            Submit(cut, "Admin123!");
 
             var nav = ctx.Services.GetRequiredService<NavigationManager>();
             cut.WaitForAssertion(
@@ -50,14 +55,38 @@ namespace JwtAuthImplTest.Components
         }
 
         [Test]
+        public void Login_ConReturnUrlExterno_NoDeberiaSalirDelSitio()
+        {
+            using var ctx = CreateContext(HttpStatusCode.OK);
+            var nav = ctx.Services.GetRequiredService<NavigationManager>();
+            nav.NavigateTo("login?returnUrl=https://sitio-falso.example");
+            var cut = ctx.Render<Login>();
+
+            Submit(cut, "Admin123!");
+
+            cut.WaitForAssertion(
+                () => Assert.That(nav.Uri, Is.EqualTo("http://localhost/products")),
+                TimeSpan.FromSeconds(2));
+        }
+
+        [TestCase(null, "products")]
+        [TestCase("products", "products")]
+        [TestCase("https://sitio-falso.example", "products")]
+        [TestCase("//sitio-falso.example", "products")]
+        [TestCase("\\\\sitio-falso.example", "products")]
+        [TestCase("javascript:alert(1)", "products")]
+        public void SafeReturnUrl_SoloAceptaRutasLocales(string? returnUrl, string expected)
+        {
+            Assert.That(Login.SafeReturnUrl(returnUrl), Is.EqualTo(expected));
+        }
+
+        [Test]
         public void Login_ConCredencialesInvalidas_DeberiaMostrarError()
         {
             using var ctx = CreateContext(HttpStatusCode.Unauthorized);
-            var cut = ctx.RenderComponent<Login>();
+            var cut = ctx.Render<Login>();
 
-            cut.Find("input[autocomplete=username]").Change("admin");
-            cut.Find("input[autocomplete=current-password]").Change("mala");
-            cut.Find("form").Submit();
+            Submit(cut, "mala");
 
             cut.WaitForAssertion(
                 () => Assert.That(cut.Markup, Does.Contain("Usuario o contraseña inválidos")),

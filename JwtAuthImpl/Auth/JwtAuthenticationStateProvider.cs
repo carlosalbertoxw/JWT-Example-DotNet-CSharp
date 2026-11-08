@@ -57,14 +57,14 @@ namespace JwtAuthImpl.Auth
 
         private static ClaimsPrincipal BuildPrincipal(string accessToken)
         {
-            // El nombre se toma del claim "username". Los roles se serializan con
-            // la URI estándar de .NET (ClaimTypes.Role), así que se usa ese tipo
-            // para que AuthorizeView/IsInRole funcionen correctamente.
+            // Contrato común: el nombre viene en el claim "username" y el rol en
+            // "role"; se declaran como tipos de nombre y rol para que
+            // AuthorizeView/IsInRole funcionen correctamente.
             var identity = new ClaimsIdentity(
                 JwtParser.ParseClaimsFromJwt(accessToken),
                 authenticationType: "jwt",
                 nameType: "username",
-                roleType: ClaimTypes.Role);
+                roleType: "role");
 
             return new ClaimsPrincipal(identity);
         }

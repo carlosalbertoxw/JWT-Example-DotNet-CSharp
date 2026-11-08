@@ -34,14 +34,14 @@ namespace JwtAuthImplTest
         public async Task GetAuthenticationStateAsync_DeberiaConstruirPrincipal_ConTokenValido()
         {
             var (provider, store) = Build(NotUsed());
-            store.AccessToken = TestJwt.Create("carlos", new[] { "Admin", "User" });
+            store.AccessToken = TestJwt.Create("carlos", "Admin");
 
             AuthenticationState state = await provider.GetAuthenticationStateAsync();
 
             Assert.That(state.User.Identity?.IsAuthenticated, Is.True);
             Assert.That(state.User.Identity?.Name, Is.EqualTo("carlos"));
             Assert.That(state.User.IsInRole("Admin"), Is.True);
-            Assert.That(state.User.IsInRole("User"), Is.True);
+            Assert.That(state.User.IsInRole("User"), Is.False);
         }
 
         [Test]
@@ -50,7 +50,7 @@ namespace JwtAuthImplTest
             var handler = new FakeHttpMessageHandler(req =>
                 req.RequestUri!.AbsolutePath == "/api/auth/refresh"
                     ? FakeHttpMessageHandler.Json(HttpStatusCode.OK,
-                        $"{{\"accessToken\":\"{TestJwt.Create("renovado", new[] { "User" })}\",\"refreshToken\":\"r2\"}}")
+                        $"{{\"access_token\":\"{TestJwt.Create("renovado")}\",\"refresh_token\":\"r2\"}}")
                     : FakeHttpMessageHandler.Empty(HttpStatusCode.NotFound));
             var (provider, store) = Build(handler);
             store.AccessToken = TestJwt.Expired("viejo");

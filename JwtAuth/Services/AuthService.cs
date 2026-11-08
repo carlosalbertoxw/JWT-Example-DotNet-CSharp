@@ -13,32 +13,41 @@ namespace JwtAuth.Services
     /// </summary>
     public class AuthService : IAuthService
     {
+        private const string InvalidRefresh = "Refresh token inválido, expirado o revocado.";
+
         private readonly IUserStore _userStore;
         private readonly IPasswordHasher _passwordHasher;
         private readonly ITokenService _tokenService;
         private readonly IRefreshTokenStore _refreshTokenStore;
         private readonly JwtSettings _settings;
+        private readonly TimeProvider _time;
 
         public AuthService(
             IUserStore userStore,
             IPasswordHasher passwordHasher,
             ITokenService tokenService,
             IRefreshTokenStore refreshTokenStore,
-            JwtSettings settings)
+            JwtSettings settings,
+            TimeProvider time)
         {
             _userStore = userStore;
             _passwordHasher = passwordHasher;
             _tokenService = tokenService;
             _refreshTokenStore = refreshTokenStore;
             _settings = settings;
+            _time = time;
         }
 
         public AuthResult Login(string username, string password)
         {
             AppUser? user = _userStore.FindByUsername(username);
 
+            // Verificar SIEMPRE contra un hash (el del usuario o el señuelo) para
+            // que el tiempo de respuesta no revele si el usuario existe.
+            bool valid = _passwordHasher.Verify(password, user?.PasswordHash ?? _passwordHasher.DecoyHash);
+
             // Mensaje genérico para no revelar si el usuario existe o no.
-            if (user is null || !_passwordHasher.Verify(password, user.PasswordHash))
+            if (user is null || !valid)
                 return AuthResult.Failure("Usuario o contraseña inválidos.");
 
             return AuthResult.Success(IssueTokens(user));
@@ -46,68 +55,49 @@ namespace JwtAuth.Services
 
         public AuthResult Refresh(string refreshToken)
         {
-            RefreshToken? stored = _refreshTokenStore.Find(refreshToken);
+            DateTime now = Now();
 
-            if (stored is null)
-                return AuthResult.Failure("Refresh token inválido o expirado.");
-
-            // Detección de reutilización: si el token existe pero ya fue revocado,
-            // es la señal clásica de robo + replay (alguien usa un token que ya se
-            // rotó). Se revoca toda la familia de refresh tokens del usuario para
-            // expulsar tanto al atacante como a la sesión comprometida.
-            if (stored.RevokedAtUtc is not null)
+            // Canje atómico: comprobar y revocar en una sola operación. Con un
+            // "Find + IsActive + Revoke" en pasos separados, dos peticiones
+            // simultáneas con el mismo token obtendrían dos pares válidos.
+            if (!_refreshTokenStore.TryConsume(refreshToken, now))
             {
-                _refreshTokenStore.RevokeAllForUser(stored.UserId);
-                return AuthResult.Failure("Refresh token inválido o expirado.");
+                // Detección de reutilización: el token existe pero ya fue usado,
+                // señal clásica de robo + replay. Se revoca toda la familia de
+                // refresh tokens del usuario para expulsar también al atacante.
+                RefreshToken? stored = _refreshTokenStore.Find(refreshToken);
+                if (stored is { IsRevoked: true })
+                    _refreshTokenStore.RevokeAllForUser(stored.UserId, now);
+
+                return AuthResult.Failure(InvalidRefresh);
             }
 
-            // Llegados aquí no está revocado; si no está activo es que expiró.
-            if (!stored.IsActive)
-                return AuthResult.Failure("Refresh token inválido o expirado.");
-
-            AppUser? user = _userStore.FindById(stored.UserId);
+            RefreshToken consumed = _refreshTokenStore.Find(refreshToken)!;
+            AppUser? user = _userStore.FindById(consumed.UserId);
             if (user is null)
-                return AuthResult.Failure("El usuario asociado ya no existe.");
-
-            // Rotación: el refresh token usado se revoca y se emite uno nuevo.
-            _refreshTokenStore.Revoke(refreshToken);
+                return AuthResult.Failure(InvalidRefresh);
 
             return AuthResult.Success(IssueTokens(user));
         }
 
-        public bool Logout(string refreshToken, Guid userId)
-        {
-            RefreshToken? stored = _refreshTokenStore.Find(refreshToken);
-
-            // Solo el propietario del refresh token puede revocarlo: así un usuario
-            // autenticado no puede cerrar la sesión de otro adivinando su token.
-            if (stored is null || stored.UserId != userId)
-                return false;
-
-            return _refreshTokenStore.Revoke(refreshToken);
-        }
+        public void Logout(string refreshToken) => _refreshTokenStore.Revoke(refreshToken, Now());
 
         private TokenPair IssueTokens(AppUser user)
         {
-            (string accessToken, DateTime accessExpires) = _tokenService.CreateAccessToken(user);
-
+            DateTime now = Now();
+            string accessToken = _tokenService.CreateAccessToken(user);
             string refreshTokenValue = _tokenService.GenerateRefreshToken();
-            DateTime refreshExpires = DateTime.UtcNow.AddDays(_settings.RefreshTokenDays);
 
-            _refreshTokenStore.Add(new RefreshToken
-            {
-                Token = refreshTokenValue,
-                UserId = user.Id,
-                ExpiresAtUtc = refreshExpires
-            });
+            _refreshTokenStore.Add(refreshTokenValue, user.Id, now.AddDays(_settings.RefreshTokenDays));
 
             return new TokenPair
             {
                 AccessToken = accessToken,
-                AccessTokenExpiresAtUtc = accessExpires,
                 RefreshToken = refreshTokenValue,
-                RefreshTokenExpiresAtUtc = refreshExpires
+                ExpiresInSeconds = _settings.AccessTokenMinutes * 60
             };
         }
+
+        private DateTime Now() => _time.GetUtcNow().UtcDateTime;
     }
 }

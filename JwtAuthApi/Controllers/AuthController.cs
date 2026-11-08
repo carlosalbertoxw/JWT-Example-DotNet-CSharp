@@ -1,100 +1,130 @@
-using System.Security.Claims;
-using JwtAuth.Models;
+using JwtAuth.Security;
 using JwtAuth.Services;
+using JwtAuth.Tokens;
 using JwtAuthApi.Contracts;
+using JwtAuthApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.RateLimiting;
 
 namespace JwtAuthApi.Controllers
 {
     /// <summary>
     /// Endpoints de autenticación: login, refresh, logout y consulta del
     /// usuario autenticado. Toda la lógica JWT vive en el proyecto JwtAuth;
-    /// este controlador solo traduce entre HTTP y la librería.
+    /// este controlador solo traduce entre HTTP y la librería. Login y refresh
+    /// responden 429 con Retry-After tras varios intentos fallidos.
     /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     public class AuthController : ControllerBase
     {
         private readonly IAuthService _authService;
+        private readonly AuthRateLimits _limits;
 
-        public AuthController(IAuthService authService)
+        public AuthController(IAuthService authService, AuthRateLimits limits)
         {
             _authService = authService;
+            _limits = limits;
         }
 
         /// <summary>Valida credenciales y devuelve un par de tokens.</summary>
         [HttpPost("login")]
         [AllowAnonymous]
-        [EnableRateLimiting("auth")]
-        [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(TokenResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status429TooManyRequests)]
         public IActionResult Login([FromBody] LoginRequest request)
         {
+            // Dos contadores de fallos:
+            //  - por cuenta: frena la fuerza bruta contra un usuario aunque el atacante rote de IP;
+            //  - por IP: frena el "password spraying" (una contraseña contra muchas cuentas).
+            string accountKey = "login:user:" + request.Username.ToLowerInvariant();
+            string ipKey = "login:ip:" + ClientIp();
+            if (TooMany(_limits.Account, accountKey) is { } blockedAccount) return blockedAccount;
+            if (TooMany(_limits.Ip, ipKey) is { } blockedIp) return blockedIp;
+
             AuthResult result = _authService.Login(request.Username, request.Password);
-
             if (!result.Succeeded)
-                return Unauthorized(new { error = result.Error });
+            {
+                _limits.Account.RecordFailure(accountKey);
+                _limits.Ip.RecordFailure(ipKey);
+                return Unauthorized(new ErrorResponse(result.Error!));
+            }
 
-            return Ok(ToResponse(result.Tokens!));
+            // Solo se limpia el contador de la cuenta: si se limpiara el de la IP,
+            // un atacante con una cuenta propia podría reiniciarlo a voluntad.
+            _limits.Account.Clear(accountKey);
+            return Ok(ToResponse(result));
         }
 
         /// <summary>Renueva el par de tokens a partir de un refresh token válido.</summary>
         [HttpPost("refresh")]
         [AllowAnonymous]
-        [EnableRateLimiting("auth")]
-        [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(TokenResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status429TooManyRequests)]
         public IActionResult Refresh([FromBody] RefreshRequest request)
         {
+            // Límite por IP para impedir adivinar refresh tokens. No se limpia tras
+            // un éxito: si no, un atacante con un token propio podría reiniciarlo.
+            string ipKey = "refresh:ip:" + ClientIp();
+            if (TooMany(_limits.Ip, ipKey) is { } blocked) return blocked;
+
             AuthResult result = _authService.Refresh(request.RefreshToken);
-
             if (!result.Succeeded)
-                return Unauthorized(new { error = result.Error });
+            {
+                _limits.Ip.RecordFailure(ipKey);
+                return Unauthorized(new ErrorResponse(result.Error!));
+            }
 
-            return Ok(ToResponse(result.Tokens!));
+            return Ok(ToResponse(result));
         }
 
-        /// <summary>Revoca el refresh token indicado (cierre de sesión).</summary>
+        /// <summary>
+        /// Revoca el refresh token enviado y cierra solo esa sesión. Es público:
+        /// quien tiene el refresh token ya puede usarlo, así que poseerlo basta
+        /// para revocarlo, y el cliente no necesita un access token vigente (ni
+        /// renovarlo) para salir. Responde 200 aunque el token no exista, para no
+        /// revelar su validez.
+        /// </summary>
         [HttpPost("logout")]
-        [Authorize]
-        [ProducesResponseType(StatusCodes.Status204NoContent)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [AllowAnonymous]
+        [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
         public IActionResult Logout([FromBody] RefreshRequest request)
         {
-            string? sub = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!Guid.TryParse(sub, out Guid userId))
-                return Unauthorized();
-
-            // Respuesta idempotente: 204 exista o no el token. No se distingue el
-            // caso "no existe" del "no es tuyo" para no filtrar validez de tokens.
-            _authService.Logout(request.RefreshToken, userId);
-
-            return NoContent();
+            _authService.Logout(request.RefreshToken);
+            return Ok(new MessageResponse("Sesión cerrada"));
         }
 
         /// <summary>Devuelve la información del usuario autenticado (claims del token).</summary>
         [HttpGet("me")]
         [Authorize]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(MeResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
         public IActionResult Me()
         {
-            return Ok(new
-            {
-                userId = User.FindFirstValue(ClaimTypes.NameIdentifier),
-                username = User.Identity?.Name ?? User.FindFirstValue("username"),
-                roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray()
-            });
+            _ = long.TryParse(User.FindFirst("exp")?.Value, out long exp);
+            return Ok(new MeResponse(
+                User.FindFirst("sub")?.Value,
+                User.FindFirst(TokenService.UsernameClaim)?.Value,
+                User.FindFirst(TokenService.RoleClaim)?.Value,
+                exp));
         }
 
-        private static AuthResponse ToResponse(TokenPair tokens) => new()
+        private static TokenResponse ToResponse(AuthResult result) =>
+            new(result.Tokens!.AccessToken, result.Tokens.RefreshToken, result.Tokens.ExpiresInSeconds);
+
+        private string ClientIp() => HttpContext.Connection.RemoteIpAddress?.ToString() ?? "desconocida";
+
+        /// <summary>Respuesta 429 con Retry-After si la clave agotó sus intentos; null si no.</summary>
+        private ObjectResult? TooMany(RateLimiter limiter, string key)
         {
-            AccessToken = tokens.AccessToken,
-            AccessTokenExpiresAtUtc = tokens.AccessTokenExpiresAtUtc,
-            RefreshToken = tokens.RefreshToken,
-            RefreshTokenExpiresAtUtc = tokens.RefreshTokenExpiresAtUtc
-        };
+            if (!limiter.TooManyAttempts(key))
+                return null;
+
+            Response.Headers.RetryAfter = limiter.RetryAfterSeconds(key).ToString();
+            return StatusCode(StatusCodes.Status429TooManyRequests,
+                new ErrorResponse("Demasiados intentos; espera antes de reintentar"));
+        }
     }
 }

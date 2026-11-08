@@ -1,4 +1,6 @@
-using JwtAuthApi.Services;
+using JwtAuthApi.Contracts;
+using JwtAuthDatos.Models;
+using JwtAuthDatos.Stores;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -6,48 +8,45 @@ namespace JwtAuthApi.Controllers
 {
     /// <summary>
     /// Controlador de ejemplo que simula un recurso de negocio protegido por
-    /// JWT. Muestra tres niveles de acceso: público, autenticado y por rol.
-    /// La lógica del catálogo vive en <see cref="IProductService"/>; este
-    /// controlador solo traduce entre HTTP y dicho servicio.
+    /// JWT. Muestra tres niveles de acceso: público (sin precio), autenticado
+    /// (con precio) y por rol (alta de productos, solo Admin).
     /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     public class ProductsController : ControllerBase
     {
-        private readonly IProductService _products;
+        private readonly IProductStore _products;
 
-        public ProductsController(IProductService products)
+        public ProductsController(IProductStore products)
         {
             _products = products;
         }
 
-        /// <summary>Endpoint público: no requiere token.</summary>
+        /// <summary>Endpoint público: todos los productos, pero sin el precio.</summary>
         [HttpGet("public")]
         [AllowAnonymous]
-        public IActionResult GetPublic()
-        {
-            return Ok(new { message = "Catálogo público visible para cualquiera.", items = _products.GetCatalog() });
-        }
+        [ProducesResponseType(typeof(IEnumerable<PublicProduct>), StatusCodes.Status200OK)]
+        public IEnumerable<PublicProduct> GetPublic() =>
+            _products.GetAll().Select(p => new PublicProduct(p.Id, p.Name, p.Description));
 
-        /// <summary>Endpoint protegido: requiere un access token válido.</summary>
+        /// <summary>Endpoint protegido: requiere un access token válido (incluye el precio).</summary>
         [HttpGet]
         [Authorize]
-        public IActionResult GetAll()
-        {
-            return Ok(new
-            {
-                message = $"Hola {User.Identity?.Name}, este es el listado completo.",
-                items = _products.GetCatalog()
-            });
-        }
+        [ProducesResponseType(typeof(IEnumerable<Product>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
+        public IReadOnlyList<Product> GetAll() => _products.GetAll();
 
         /// <summary>Endpoint restringido por rol: solo usuarios con rol Admin.</summary>
         [HttpPost]
         [Authorize(Roles = "Admin")]
-        public IActionResult Create([FromBody] string name)
+        [ProducesResponseType(typeof(Product), StatusCodes.Status201Created)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+        public IActionResult Create([FromBody] CreateProductRequest request)
         {
-            _products.Create(name);
-            return Created($"/api/products/{name}", new { message = $"Producto '{name}' creado.", name });
+            Product product = _products.Add(
+                request.Name.Trim(), request.Description?.Trim() ?? string.Empty, request.Price!.Value);
+            return StatusCode(StatusCodes.Status201Created, product);
         }
     }
 }

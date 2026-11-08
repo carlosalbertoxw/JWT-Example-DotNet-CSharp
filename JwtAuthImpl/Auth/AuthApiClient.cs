@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using JwtAuthImpl.Models;
 
@@ -27,12 +26,12 @@ namespace JwtAuthImpl.Auth
         public async Task<bool> LoginAsync(string username, string password)
         {
             HttpResponseMessage response = await _http.PostAsJsonAsync(
-                "api/auth/login", new LoginRequest(username, password));
+                "api/auth/login", new LoginRequest(username, password), ApiJson.Options);
 
             if (!response.IsSuccessStatusCode)
                 return false;
 
-            var auth = await response.Content.ReadFromJsonAsync<AuthResponse>();
+            var auth = await response.Content.ReadFromJsonAsync<AuthResponse>(ApiJson.Options);
             if (auth is null)
                 return false;
 
@@ -65,12 +64,12 @@ namespace JwtAuthImpl.Auth
                     return true;
 
                 HttpResponseMessage response = await _http.PostAsJsonAsync(
-                    "api/auth/refresh", new RefreshRequest(current));
+                    "api/auth/refresh", new RefreshRequest(current), ApiJson.Options);
 
                 if (!response.IsSuccessStatusCode)
                     return false;
 
-                var auth = await response.Content.ReadFromJsonAsync<AuthResponse>();
+                var auth = await response.Content.ReadFromJsonAsync<AuthResponse>(ApiJson.Options);
                 if (auth is null)
                     return false;
 
@@ -83,33 +82,37 @@ namespace JwtAuthImpl.Auth
             }
         }
 
-        /// <summary>Revoca el refresh token en la API y limpia el almacenamiento local.</summary>
+        /// <summary>
+        /// Revoca el refresh token en la API (cierra esta sesión) y limpia el
+        /// almacenamiento local. La petición no lleva access token: el refresh
+        /// token es la credencial, así que no hace falta renovar nada para salir
+        /// (con un access token expirado, la API respondería 401 y el refresh
+        /// token seguiría vivo).
+        /// </summary>
         public async Task LogoutAsync()
         {
             string? refreshToken = await _tokenStore.GetRefreshTokenAsync();
 
-            if (!string.IsNullOrEmpty(refreshToken))
+            try
             {
-                try
+                if (!string.IsNullOrEmpty(refreshToken))
                 {
-                    using var request = new HttpRequestMessage(HttpMethod.Post, "api/auth/logout")
-                    {
-                        Content = JsonContent.Create(new RefreshRequest(refreshToken))
-                    };
-
-                    string? accessToken = await _tokenStore.GetAccessTokenAsync();
-                    if (!string.IsNullOrEmpty(accessToken))
-                        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-
-                    await _http.SendAsync(request);
-                }
-                catch
-                {
-                    // El logout local debe ocurrir aunque la llamada remota falle.
+                    await _http.PostAsJsonAsync(
+                        "api/auth/logout", new RefreshRequest(refreshToken), ApiJson.Options);
                 }
             }
-
-            await _tokenStore.ClearAsync();
+            catch (HttpRequestException)
+            {
+                // El logout local debe ocurrir aunque la llamada remota falle.
+            }
+            catch (TaskCanceledException)
+            {
+                // Timeout de la API: igual se cierra la sesión local.
+            }
+            finally
+            {
+                await _tokenStore.ClearAsync();
+            }
         }
     }
 }

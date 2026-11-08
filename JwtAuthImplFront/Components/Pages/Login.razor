@@ -2,6 +2,7 @@
 @inject AuthApiClient AuthApi
 @inject JwtAuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
+@inject ILogger<Login> Logger
 
 <PageTitle>Iniciar sesión</PageTitle>
 
@@ -63,16 +64,34 @@
 
             // Notifica a la app que el usuario cambió y navega a destino.
             await AuthStateProvider.NotifyAuthenticationChangedAsync();
-            Navigation.NavigateTo(string.IsNullOrEmpty(ReturnUrl) ? "products" : ReturnUrl);
+            Navigation.NavigateTo(SafeReturnUrl(ReturnUrl));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            _error = $"No se pudo contactar la API: {ex.Message}";
+            // El detalle técnico va al log; al usuario, un mensaje genérico.
+            Logger.LogWarning(ex, "No se pudo contactar la API durante el login.");
+            _error = "No se pudo contactar la API. Inténtalo de nuevo en unos momentos.";
         }
         finally
         {
             _loading = false;
         }
+    }
+
+    /// <summary>
+    /// Solo acepta rutas relativas del propio sitio. Sin esta validación,
+    /// "login?returnUrl=https://sitio-falso" enviaría al usuario, recién
+    /// autenticado, a un sitio externo (redirección abierta).
+    /// </summary>
+    public static string SafeReturnUrl(string? returnUrl)
+    {
+        // Rutas como "products" o "products?x=1": sin esquema (":"), sin "/" ni "\"
+        // iniciales (que el navegador interpreta como "//otro-sitio").
+        bool isLocalPath = !string.IsNullOrWhiteSpace(returnUrl)
+            && !returnUrl.Contains(':')
+            && !returnUrl.Contains('\\')
+            && !returnUrl.StartsWith('/');
+        return isLocalPath ? returnUrl! : "products";
     }
 
     private sealed class LoginModel

@@ -1,4 +1,3 @@
-using JwtAuth.Models;
 using JwtAuthDatos.Stores;
 
 namespace JwtAuthTest
@@ -6,48 +5,51 @@ namespace JwtAuthTest
     [TestFixture]
     public class InMemoryRefreshTokenStoreTests
     {
+        private static readonly DateTime Now = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         private InMemoryRefreshTokenStore _store = null!;
 
         [SetUp]
         public void SetUp() => _store = new InMemoryRefreshTokenStore();
 
-        private static RefreshToken NewToken(string value, Guid userId, int days = 7) => new()
-        {
-            Token = value,
-            UserId = userId,
-            ExpiresAtUtc = DateTime.UtcNow.AddDays(days)
-        };
+        private void Add(string value, Guid userId, int days = 7) =>
+            _store.Add(value, userId, Now.AddDays(days));
 
         [Test]
-        public void AddYFind_DeberiaRecuperarElTokenAgregado()
+        public void AddYFind_DeberiaRecuperarElToken()
         {
-            var token = NewToken("abc", Guid.NewGuid());
-            _store.Add(token);
+            var userId = Guid.NewGuid();
+            Add("abc", userId);
 
-            Assert.That(_store.Find("abc"), Is.SameAs(token));
-        }
+            var found = _store.Find("abc");
 
-        [Test]
-        public void Find_DeberiaRetornarNull_SiNoExiste()
-        {
+            Assert.That(found, Is.Not.Null);
+            Assert.That(found!.UserId, Is.EqualTo(userId));
             Assert.That(_store.Find("inexistente"), Is.Null);
         }
 
         [Test]
-        public void Revoke_DeberiaMarcarElTokenComoInactivo()
+        public void TryConsume_DeberiaFuncionarUnaSolaVez()
         {
-            _store.Add(NewToken("abc", Guid.NewGuid()));
+            Add("abc", Guid.NewGuid());
 
-            bool revoked = _store.Revoke("abc");
+            Assert.That(_store.TryConsume("abc", Now), Is.True);
+            Assert.That(_store.TryConsume("abc", Now), Is.False);
+            Assert.That(_store.Find("abc")!.IsRevoked, Is.True);
+        }
 
-            Assert.That(revoked, Is.True);
-            Assert.That(_store.Find("abc")!.IsActive, Is.False);
+        [Test]
+        public void TryConsume_DeberiaFallar_SiExpiro()
+        {
+            Add("abc", Guid.NewGuid(), days: 1);
+
+            Assert.That(_store.TryConsume("abc", Now.AddDays(2)), Is.False);
+            Assert.That(_store.Find("abc")!.IsRevoked, Is.False, "expirado no es lo mismo que reusado");
         }
 
         [Test]
         public void Revoke_DeberiaRetornarFalse_SiNoExiste()
         {
-            Assert.That(_store.Revoke("inexistente"), Is.False);
+            Assert.That(_store.Revoke("inexistente", Now), Is.False);
         }
 
         [Test]
@@ -55,37 +57,28 @@ namespace JwtAuthTest
         {
             var user1 = Guid.NewGuid();
             var user2 = Guid.NewGuid();
-            _store.Add(NewToken("t1", user1));
-            _store.Add(NewToken("t2", user1));
-            _store.Add(NewToken("t3", user2));
+            Add("t1", user1);
+            Add("t2", user1);
+            Add("t3", user2);
 
-            _store.RevokeAllForUser(user1);
+            _store.RevokeAllForUser(user1, Now);
 
-            Assert.That(_store.Find("t1")!.IsActive, Is.False);
-            Assert.That(_store.Find("t2")!.IsActive, Is.False);
-            Assert.That(_store.Find("t3")!.IsActive, Is.True);
-        }
-
-        [Test]
-        public void IsActive_DeberiaSerFalse_ParaTokenExpirado()
-        {
-            var token = NewToken("expirado", Guid.NewGuid(), days: -1);
-            _store.Add(token);
-
-            Assert.That(_store.Find("expirado")!.IsActive, Is.False);
+            Assert.That(_store.Find("t1")!.IsRevoked, Is.True);
+            Assert.That(_store.Find("t2")!.IsRevoked, Is.True);
+            Assert.That(_store.Find("t3")!.IsRevoked, Is.False);
         }
 
         [Test]
         public void RemoveExpired_DeberiaQuitarSoloLosExpirados()
         {
             var userId = Guid.NewGuid();
-            _store.Add(NewToken("vigente", userId, days: 7));
-            _store.Add(NewToken("expirado", userId, days: -1));
+            Add("vigente", userId, days: 7);
+            Add("expirado", userId, days: -1);
             // Revocado pero aún no expirado: debe conservarse para detectar reuso.
-            _store.Add(NewToken("revocado-vigente", userId, days: 7));
-            _store.Revoke("revocado-vigente");
+            Add("revocado-vigente", userId, days: 7);
+            _store.Revoke("revocado-vigente", Now);
 
-            int removed = _store.RemoveExpired();
+            int removed = _store.RemoveExpired(Now);
 
             Assert.That(removed, Is.EqualTo(1));
             Assert.That(_store.Find("expirado"), Is.Null);

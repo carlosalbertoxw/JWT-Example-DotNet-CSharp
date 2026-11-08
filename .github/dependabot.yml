@@ -1,0 +1,20 @@
+# Propone actualizaciones semanales de paquetes NuGet, imágenes base y GitHub Actions.
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      microsoft:
+        patterns: ["Microsoft.*", "System.*"]
+      pruebas:
+        patterns: ["NUnit*", "bunit", "coverlet*"]
+  - package-ecosystem: docker
+    directories: ["/JwtAuthApi", "/JwtAuthImplFront"]
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

@@ -12,13 +12,16 @@ namespace JwtAuthApi.Services
         private static readonly TimeSpan Interval = TimeSpan.FromHours(1);
 
         private readonly IRefreshTokenStore _store;
+        private readonly TimeProvider _time;
         private readonly ILogger<RefreshTokenCleanupService> _logger;
 
         public RefreshTokenCleanupService(
             IRefreshTokenStore store,
+            TimeProvider time,
             ILogger<RefreshTokenCleanupService> logger)
         {
             _store = store;
+            _time = time;
             _logger = logger;
         }
 
@@ -30,7 +33,7 @@ namespace JwtAuthApi.Services
             {
                 try
                 {
-                    int removed = _store.RemoveExpired();
+                    int removed = _store.RemoveExpired(_time.GetUtcNow().UtcDateTime);
                     if (removed > 0)
                         _logger.LogInformation("Refresh tokens expirados purgados: {Count}.", removed);
                 }

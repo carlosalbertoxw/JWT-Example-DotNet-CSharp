@@ -8,16 +8,14 @@ namespace JwtAuthImplTest
     public class JwtParserTests
     {
         [Test]
-        public void ParseClaimsFromJwt_DeberiaExtraerUsernameYRoles()
+        public void ParseClaimsFromJwt_DeberiaExtraerUsernameYRol()
         {
-            string token = TestJwt.Create("carlos", new[] { "Admin", "User" });
+            string token = TestJwt.Create("carlos", "Admin");
 
             var claims = JwtParser.ParseClaimsFromJwt(token).ToList();
 
             Assert.That(claims.First(c => c.Type == "username").Value, Is.EqualTo("carlos"));
-
-            string[] roles = claims.Where(c => c.Type == ClaimTypes.Role).Select(c => c.Value).ToArray();
-            Assert.That(roles, Is.EquivalentTo(new[] { "Admin", "User" }));
+            Assert.That(claims.First(c => c.Type == "role").Value, Is.EqualTo("Admin"));
         }
 
         [Test]

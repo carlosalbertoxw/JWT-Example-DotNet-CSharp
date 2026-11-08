@@ -1,3 +1,4 @@
+using JwtAuthImpl.Models;
 using System.Net;
 using JwtAuthImpl.Auth;
 using JwtAuthImpl.Products;
@@ -9,7 +10,8 @@ namespace JwtAuthImplTest
     public class ProductsApiClientTests
     {
         private const string ProductsJson =
-            "{\"message\":\"ok\",\"items\":[\"Teclado\",\"Mouse\"]}";
+            "[{\"id\":1,\"name\":\"Teclado\",\"description\":\"Rojo\",\"price\":89.99}," +
+            "{\"id\":2,\"name\":\"Mouse\",\"description\":\"Óptico\",\"price\":45.5}]";
 
         // Construye el cliente de productos sobre el canal compartido
         // (ApiHttpClient), usando AuthApiClient como refresher real para poder
@@ -42,7 +44,7 @@ namespace JwtAuthImplTest
             var result = await client.GetPublicProductsAsync();
 
             Assert.That(result, Is.Not.Null);
-            Assert.That(result!.Items, Is.EquivalentTo(new[] { "Teclado", "Mouse" }));
+            Assert.That(result!.Select(p => p.Name), Is.EquivalentTo(new[] { "Teclado", "Mouse" }));
             Assert.That(Path(captured!), Is.EqualTo("/api/products/public"));
             Assert.That(captured!.Headers.Authorization, Is.Null);
         }
@@ -75,7 +77,7 @@ namespace JwtAuthImplTest
                 {
                     case "/api/auth/refresh":
                         return FakeHttpMessageHandler.Json(HttpStatusCode.OK,
-                            "{\"accessToken\":\"nuevo\",\"refreshToken\":\"r2\"}");
+                            "{\"access_token\":\"nuevo\",\"refresh_token\":\"r2\"}");
                     case "/api/products":
                         // Con el token viejo responde 401; con el nuevo, 200.
                         return req.Headers.Authorization?.Parameter == "nuevo"
@@ -117,7 +119,7 @@ namespace JwtAuthImplTest
             var (client, store) = Build(handler);
             store.AccessToken = "token";
 
-            HttpStatusCode status = await client.CreateProductAsync("Tablet");
+            HttpStatusCode status = await client.CreateProductAsync(new NewProduct("Tablet", "10 pulgadas", 199.99m));
 
             Assert.That(status, Is.EqualTo(HttpStatusCode.Created));
         }

@@ -9,6 +9,9 @@ namespace JwtAuth.Configuration
         /// <summary>Nombre de la sección de configuración asociada.</summary>
         public const string SectionName = "Jwt";
 
+        /// <summary>Longitud mínima de la clave HMAC-SHA256 (RFC 7518: 256 bits).</summary>
+        public const int MinSigningKeyBytes = 32;
+
         /// <summary>Emisor del token (claim "iss").</summary>
         public string Issuer { get; set; } = string.Empty;
 
