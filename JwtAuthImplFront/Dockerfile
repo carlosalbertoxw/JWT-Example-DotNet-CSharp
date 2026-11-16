@@ -3,7 +3,7 @@
 # porque este proyecto referencia al proyecto hermano JwtAuthImpl.
 
 # --- Etapa de compilación ---
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src
 
 # Primero solo los .csproj (y la config común) para aprovechar la caché de restore.
