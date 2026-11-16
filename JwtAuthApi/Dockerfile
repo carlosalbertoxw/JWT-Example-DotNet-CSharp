@@ -20,7 +20,7 @@ COPY JwtAuthApi/ JwtAuthApi/
 RUN dotnet publish JwtAuthApi/JwtAuthApi.csproj -c Release -o /app --no-restore
 
 # --- Etapa de ejecución ---
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS runtime
 WORKDIR /app
 COPY --from=build /app .
 
