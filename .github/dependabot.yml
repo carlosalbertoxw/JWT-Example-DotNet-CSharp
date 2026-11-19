@@ -1,4 +1,10 @@
 # Propone actualizaciones semanales de paquetes NuGet, imágenes base y GitHub Actions.
+#
+# El proyecto se mantiene en la versión LTS de .NET (net10.0). Los paquetes
+# del framework y las imágenes Docker solo reciben parches: el salto a la
+# siguiente versión mayor (p. ej. 10 -> 11, que es STS) se hace a mano junto
+# con <TargetFramework> en Directory.Build.props. Si solo cambiara la imagen,
+# la app compilada para net10.0 no arrancaría sobre el runtime 11.
 version: 2
 updates:
   - package-ecosystem: nuget
@@ -10,10 +16,21 @@ updates:
         patterns: ["Microsoft.*", "System.*"]
       pruebas:
         patterns: ["NUnit*", "bunit", "coverlet*"]
+    ignore:
+      # Paquetes versionados junto con .NET: se quedan en la línea 10.0.x.
+      - dependency-name: "Microsoft.AspNetCore.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.Extensions.*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: docker
     directories: ["/JwtAuthApi", "/JwtAuthImplFront"]
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "dotnet/sdk"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "dotnet/aspnet"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
