@@ -15,7 +15,7 @@ updates:
       microsoft:
         patterns: ["Microsoft.*", "System.*"]
       pruebas:
-        patterns: ["NUnit*", "bunit", "coverlet*"]
+        patterns: ["NUnit*", "bunit"]
     ignore:
       # Paquetes versionados junto con .NET: se quedan en la línea 10.0.x.
       - dependency-name: "Microsoft.AspNetCore.*"
@@ -23,7 +23,7 @@ updates:
       - dependency-name: "Microsoft.Extensions.*"
         update-types: ["version-update:semver-major"]
   - package-ecosystem: docker
-    directories: ["/JwtAuthApi", "/JwtAuthImplFront"]
+    directories: ["/JwtAuth.Api", "/JwtAuth.Web"]
     schedule:
       interval: weekly
     ignore:

@@ -1,0 +1,29 @@
+name: Auto-merge de Dependabot
+
+# Activa el auto-merge en los PR de Dependabot que suben versiones patch o
+# minor. GitHub los fusiona solo cuando pasan los checks que exige la regla de
+# la rama master; si la CI falla, el PR queda abierto. Las versiones major se
+# revisan a mano.
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Leer el tipo de actualización
+        id: metadata
+        uses: dependabot/fetch-metadata@v3
+
+      - name: Activar el auto-merge (patch y minor)
+        if: >-
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

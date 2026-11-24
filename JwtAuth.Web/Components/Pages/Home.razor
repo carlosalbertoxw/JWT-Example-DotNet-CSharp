@@ -1,0 +1,21 @@
+@page "/"
+
+<PageTitle>Inicio</PageTitle>
+
+<h1>Ejemplo JWT .NET</h1>
+
+<p>Cliente Blazor que consume la API de ejemplo (<strong>JwtAuth.Api</strong>) con autenticación JWT.</p>
+
+<AuthorizeView>
+    <Authorized>
+        <div class="alert alert-success">
+            Sesión iniciada como <strong>@context.User.Identity?.Name</strong>.
+            Rol: @context.User.FindFirst("role")?.Value
+        </div>
+        <a class="btn btn-primary" href="products">Ir a productos</a>
+    </Authorized>
+    <NotAuthorized>
+        <div class="alert alert-secondary">No has iniciado sesión.</div>
+        <a class="btn btn-primary" href="login">Iniciar sesión</a>
+    </NotAuthorized>
+</AuthorizeView>

@@ -1,6 +1,6 @@
 ## .gitignore para soluciones .NET / Visual Studio
-## Cubre todos los proyectos del repositorio (JwtAuth, JwtAuthApi, JwtAuthTest,
-## JwtAuthImpl, JwtAuthImplFront, JwtAuthImplTest) y ambas soluciones.
+## Cubre todos los proyectos del repositorio (JwtAuth, JwtAuth.Data, JwtAuth.Api,
+## JwtAuth.Client, JwtAuth.Web y sus proyectos *.Tests).
 
 # Resultados de compilación
 [Bb]in/

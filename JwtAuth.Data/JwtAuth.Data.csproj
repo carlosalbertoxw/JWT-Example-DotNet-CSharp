@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+  <!--
+    La capa de datos implementa los contratos definidos en JwtAuth
+    (IUserStore, IRefreshTokenStore) y aporta el almacén de productos.
+    El proyecto JwtAuth permanece ajeno a cómo se persisten los datos.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\JwtAuth\JwtAuth.csproj" />
+  </ItemGroup>
+
+</Project>

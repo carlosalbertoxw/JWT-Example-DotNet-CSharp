@@ -22,25 +22,27 @@ la **validación/emisión de JWT**, el **acceso a datos** y la **capa web** qued
 ```
 JWT-Example-DotNet-CSharp/
 ├── JwtAuth/                → Librería de validación/emisión JWT (sin dependencia de ASP.NET Core)
-├── JwtAuthDatos/           → Capa de datos: almacenes de usuarios, refresh tokens, intentos de login y productos
-├── JwtAuthApi/             → Web API que expone los endpoints de autenticación y ejemplos
-├── JwtAuthTest/            → Pruebas unitarias (NUnit) de JwtAuth y JwtAuthDatos
-├── JwtAuthApiTest/         → Pruebas de integración de la API (WebApplicationFactory)
-├── JwtAuthImpl/            → Implementación cliente de JWT (consumo de la API), desacoplada del front
-├── JwtAuthImplFront/        → App Blazor (Interactive Server): solo la UI, referencia a JwtAuthImpl
-└── JwtAuthImplTest/        → Pruebas (NUnit + bUnit) de la implementación cliente y los componentes
+├── JwtAuth.Data/           → Capa de datos: almacenes de usuarios, refresh tokens, intentos de login y productos
+├── JwtAuth.Api/            → Web API que expone los endpoints de autenticación y ejemplos
+├── JwtAuth.Client/         → Cliente HTTP de la API (login, refresh, productos), desacoplado del front
+├── JwtAuth.Web/            → App Blazor (Interactive Server): solo la UI, referencia a JwtAuth.Client
+├── JwtAuth.Tests/          → Pruebas unitarias (NUnit) de JwtAuth y JwtAuth.Data
+├── JwtAuth.Api.Tests/      → Pruebas de integración de la API (WebApplicationFactory)
+├── JwtAuth.Client.Tests/   → Pruebas (NUnit + bUnit) del cliente y de los componentes del front
+├── Directory.Build.props   → Configuración común (TargetFramework, Nullable…)
+└── Directory.Packages.props → Versiones de los paquetes NuGet, declaradas una sola vez
 ```
 
 ### Capas y dependencias (backend)
 
 ```
-JwtAuthApi ──► JwtAuth        (emisión y parámetros de validación; contratos IUserStore / IRefreshTokenStore / IAttemptStore)
+JwtAuth.Api ──► JwtAuth        (emisión y parámetros de validación; contratos IUserStore / IRefreshTokenStore / IAttemptStore)
      │
-     └───────► JwtAuthDatos ──► JwtAuth   (implementa los contratos + almacén de productos)
+     └───────► JwtAuth.Data ──► JwtAuth   (implementa los contratos + almacén de productos)
 ```
 
 `JwtAuth` define **qué** se necesita (interfaces) pero no **cómo** se persiste;
-`JwtAuthDatos` aporta las implementaciones. Así, cambiar a una base de datos real
+`JwtAuth.Data` aporta las implementaciones. Así, cambiar a una base de datos real
 no toca la lógica de validación: basta con sustituir la capa de datos.
 
 ### `JwtAuth` — validación/emisión JWT (class library)
@@ -57,22 +59,22 @@ los **contratos** (interfaces) de los almacenes. No conoce cómo se persisten lo
 | `Security/IPasswordHasher.cs` + `Pbkdf2PasswordHasher.cs` | Hashing de contraseñas con PBKDF2-SHA256 (600 000 iteraciones, salt aleatorio, comparación en tiempo constante) y hash señuelo contra la enumeración de usuarios por tiempo. |
 | `Security/RateLimiter.cs` + `Stores/IAttemptStore.cs` | Límite de intentos fallidos con ventana deslizante (por cuenta y por IP). |
 | `Tokens/ITokenService.cs` + `TokenService.cs` | Emisión de access tokens (HMAC-SHA256, con `JsonWebTokenHandler`) y de refresh tokens. `CreateValidationParameters(...)` da los parámetros con que el middleware JwtBearer de la API valida cada token. |
-| `Stores/IUserStore.cs` | **Contrato** del repositorio de usuarios (la implementación vive en `JwtAuthDatos`). |
+| `Stores/IUserStore.cs` | **Contrato** del repositorio de usuarios (la implementación vive en `JwtAuth.Data`). |
 | `Stores/IRefreshTokenStore.cs` | **Contrato** del almacén de refresh tokens: canje atómico (`TryConsume`), revocación y purga. |
 | `Services/IAuthService.cs` + `AuthService.cs` | Orquesta login, refresh (con rotación) y logout. Devuelve `AuthResult`. |
-| `Extensions/ServiceCollectionExtensions.cs` | `AddJwtAuth(...)`: registra la validación/emisión en DI. **No registra los almacenes** (eso lo hace `JwtAuthDatos`). |
+| `Extensions/ServiceCollectionExtensions.cs` | `AddJwtAuth(...)`: registra la validación/emisión en DI. **No registra los almacenes** (eso lo hace `JwtAuth.Data`). |
 
 > La librería **no referencia ASP.NET Core**. Solo depende de
 > `Microsoft.IdentityModel.JsonWebTokens` y
 > `Microsoft.Extensions.DependencyInjection.Abstractions`. Así puede reutilizarse
 > desde cualquier tipo de aplicación (consola, worker, otra API) y probarse sin levantar un host web.
 
-### `JwtAuthDatos` — capa de datos (class library)
+### `JwtAuth.Data` — capa de datos (class library)
 
 Provee las **implementaciones** de los almacenes. Es la única capa que sabe *cómo* se
 guardan los datos; referencia a `JwtAuth` para implementar sus contratos. En este
 ejemplo todo es **en memoria**, pero para migrar a una base de datos real basta con
-cambiar este proyecto, sin tocar `JwtAuth` ni `JwtAuthApi`.
+cambiar este proyecto, sin tocar `JwtAuth` ni `JwtAuth.Api`.
 
 | Archivo | Responsabilidad |
 |---|---|
@@ -82,7 +84,7 @@ cambiar este proyecto, sin tocar `JwtAuth` ni `JwtAuthApi`.
 | `Stores/IProductStore.cs` + `InMemoryProductStore.cs` | Almacén del catálogo de productos (contenido de ejemplo, ajeno a JWT). |
 | `Extensions/ServiceCollectionExtensions.cs` | `AddJwtAuthData()`: registra los cuatro almacenes en DI. **Único punto a cambiar para apuntar a una BD real.** |
 
-### `JwtAuthApi` — Web API
+### `JwtAuth.Api` — Web API
 
 | Archivo | Responsabilidad |
 |---|---|
@@ -97,21 +99,21 @@ cambiar este proyecto, sin tocar `JwtAuth` ni `JwtAuthApi`.
 > (`ProductsController`/`IProductStore`) están separadas: los productos son solo
 > contenido de ejemplo y no se mezclan con el flujo JWT.
 
-### `JwtAuthTest` — pruebas unitarias (NUnit)
+### `JwtAuth.Tests` — pruebas unitarias (NUnit)
 
 Pruebas del hasher de contraseñas, el `TokenService`, el `RateLimiter`, el
-`InMemoryRefreshTokenStore` (de `JwtAuthDatos`) y el `AuthService` (login, rotación,
+`InMemoryRefreshTokenStore` (de `JwtAuth.Data`) y el `AuthService` (login, rotación,
 reuso, refresh concurrente y logout por sesión).
 
-### `JwtAuthApiTest` — pruebas de integración
+### `JwtAuth.Api.Tests` — pruebas de integración
 
 Levantan la API en memoria con `WebApplicationFactory` y la ejercitan por HTTP:
 formato del contrato, 401/403/400 con `{"error": ...}`, logout sin access token,
 límite de intentos (429) y `/health`.
 
-### `JwtAuthImpl` — implementación cliente de JWT (class library)
+### `JwtAuth.Client` — cliente HTTP de la API (class library)
 
-Encapsula **todo el consumo de la JwtAuthApi**, desacoplado de la UI. El front solo
+Encapsula **todo el consumo de la JwtAuth.Api**, desacoplado de la UI. El front solo
 referencia esta librería y la registra con una llamada. Usa `FrameworkReference` a
 `Microsoft.AspNetCore.App` porque depende de tipos de ASP.NET Core Components.
 
@@ -123,18 +125,20 @@ clases distintas: `AuthApiClient` solo conoce los endpoints `api/auth/*`, mientr
 |---|---|
 | `Models/AuthModels.cs` / `ApiModels.cs` | DTOs que reflejan los contratos de la API. |
 | `Auth/JwtParser.cs` | Lee los claims del JWT (sin validar la firma) y detecta expiración. |
-| `Auth/TokenStore.cs` | Persiste access/refresh tokens con `ProtectedLocalStorage` (cifrado en servidor). |
+| `Auth/TokenStore.cs` | Persiste access/refresh tokens con `ProtectedSessionStorage` (por pestaña, cifrado en servidor). |
 | `Auth/AuthApiClient.cs` | Cliente HTTP tipado de **autenticación**: login, refresh y logout. Implementa `ITokenRefresher`. |
 | `Auth/ApiHttpClient.cs` | Canal HTTP compartido por los clientes de negocio: adjunta el bearer y hace **reintento + refresh automático ante 401**. |
 | `Auth/ITokenRefresher.cs` | Abstrae el refresco para que `ApiHttpClient` lo dispare sin acoplarse a `AuthApiClient`. |
+| `Auth/RefreshCoordinator.cs` | Semáforo por circuito: si varias llamadas reciben 401 a la vez, solo una canjea el refresh token y las demás reutilizan el resultado. |
+| `Auth/ITokenStore.cs` | Abstrae el almacenamiento de tokens para sustituirlo en las pruebas (sin JS interop). |
 | `Products/ProductsApiClient.cs` | Cliente HTTP tipado de **productos** (catálogo público, listado protegido, alta). Sin plomería de auth. |
 | `Auth/JwtAuthenticationStateProvider.cs` | `AuthenticationStateProvider` que arma el `ClaimsPrincipal` desde el token y renueva si expiró. |
 | `Extensions/ServiceCollectionExtensions.cs` | `AddJwtAuthClient(apiBaseUrl, ...)`: registra los clientes HTTP (auth y productos), stores y proveedor de estado. |
 
-### `JwtAuthImplFront` — cliente Blazor (Interactive Server)
+### `JwtAuth.Web` — cliente Blazor (Interactive Server)
 
 Aplicación Blazor que contiene **solo la UI** (componentes y páginas) y delega toda la
-autenticación en `JwtAuthImpl`. En `Program.cs` basta con:
+autenticación en `JwtAuth.Client`. En `Program.cs` basta con:
 
 ```csharp
 builder.Services.AddJwtAuthClient(apiBaseUrl,
@@ -151,10 +155,14 @@ builder.Services.AddJwtAuthClient(apiBaseUrl,
 Detalles relevantes:
 
 - El **prerenderizado está deshabilitado** (`InteractiveServerRenderMode(prerender: false)`
-  en `App.razor`) porque `ProtectedLocalStorage` requiere JS interop, disponible solo
+  en `App.razor`) porque `ProtectedSessionStorage` requiere JS interop, disponible solo
   una vez establecido el circuito interactivo.
+- Los tokens se guardan en **`sessionStorage`, una sesión por pestaña**: cada pestaña
+  inicia sesión por separado y la sesión termina al cerrarla. Con `localStorage` las
+  pestañas compartirían el refresh token y dos de ellas podrían canjearlo a la vez; la
+  API lo trataría como un reuso (posible robo) y revocaría todas las sesiones del usuario.
 - La **autorización se aplica del lado cliente**, no a nivel de ruta/servidor. Como el
-  token vive en `localStorage`, el servidor no conoce la sesión durante el render estático
+  token vive en `sessionStorage`, el servidor no conoce la sesión durante el render estático
   (SSR); por eso no se usa el atributo `[Authorize]` (que provocaría un `ChallengeAsync`
   en el SSR sin servicio de autenticación). En su lugar, cada página protegida verifica el
   estado autenticado dentro del circuito interactivo y redirige al login si hace falta.
@@ -169,9 +177,9 @@ Detalles relevantes:
 - Al ser **Blazor Server**, las llamadas a la API salen desde el servidor (no desde el
   navegador), por lo que **no requiere configuración CORS** en la API.
 
-### `JwtAuthImplTest` — pruebas del cliente y los componentes
+### `JwtAuth.Client.Tests` — pruebas del cliente y los componentes
 
-Pruebas con **NUnit** y **bUnit** sobre `JwtAuthImpl` y los componentes del front.
+Pruebas con **NUnit** y **bUnit** sobre `JwtAuth.Client` y los componentes del front.
 Para no depender de JS interop, `TokenStore` se abstrae con `ITokenStore` y se sustituye
 por uno en memoria; las llamadas HTTP se simulan con un `FakeHttpMessageHandler`.
 
@@ -186,7 +194,7 @@ por uno en memoria; las llamadas HTTP se simulan con un `FakeHttpMessageHandler`
 | `Components/LoginTests` | Envío del formulario: navegación en éxito, mensaje de error en fallo y `returnUrl` externos rechazados. |
 
 ```bash
-dotnet test JwtAuthImplTest/JwtAuthImplTest.csproj
+dotnet test JwtAuth.Client.Tests/JwtAuth.Client.Tests.csproj
 ```
 
 ---
@@ -202,12 +210,21 @@ dotnet build JwtExample.slnx
 # Ejecutar todas las pruebas
 dotnet test JwtExample.slnx
 
-# Levantar la API (Swagger se abre en la raíz en modo Development)
-dotnet run --project JwtAuthApi/JwtAuthApi.csproj
+# Verificar el formato (lo exige la CI)
+dotnet format JwtExample.slnx --verify-no-changes
+
+# Levantar la API (en Development abre Swagger UI en /swagger)
+dotnet run --project JwtAuth.Api/JwtAuth.Api.csproj
 ```
 
+En CI (GitHub Actions) se verifica además el formato, se compila con advertencias como
+errores, se buscan paquetes con vulnerabilidades conocidas y, tras levantar el stack de
+Docker, se ejecuta una prueba de humo del contrato ([`scripts/smoke.sh`](scripts/smoke.sh)).
+Las versiones de los paquetes NuGet se declaran una sola vez en
+[`Directory.Packages.props`](Directory.Packages.props) (gestión central de paquetes).
+
 Por defecto la API queda escuchando en `http://localhost:5274` y
-`https://localhost:7036` (ver `JwtAuthApi/Properties/launchSettings.json`).
+`https://localhost:7036` (ver `JwtAuth.Api/Properties/launchSettings.json`).
 La UI de Swagger queda disponible en `/swagger` (documento OpenAPI en `/openapi/v1.json`).
 
 En desarrollo, si no defines `Jwt:SigningKey` (p. ej. con `dotnet user-secrets`), la API
@@ -220,10 +237,10 @@ El cliente Blazor espera la API en `https://localhost:7036` (configurable con
 
 ```bash
 # Terminal 1 — API (perfil https para exponer el puerto 7036)
-dotnet run --project JwtAuthApi/JwtAuthApi.csproj --launch-profile https
+dotnet run --project JwtAuth.Api/JwtAuth.Api.csproj --launch-profile https
 
 # Terminal 2 — cliente Blazor
-dotnet run --project JwtAuthImplFront/JwtAuthImplFront.csproj
+dotnet run --project JwtAuth.Web/JwtAuth.Web.csproj
 ```
 
 Luego abre la app Blazor en el navegador, ve a **Iniciar sesión** y usa uno de los
@@ -255,8 +272,8 @@ Cada aplicación tiene su propio `Dockerfile` multi-etapa (compila con la imagen
 [`docker-compose.yml`](docker-compose.yml). Detalles a tener en cuenta:
 
 - **Contexto de build en la raíz:** cada `Dockerfile` se construye desde la raíz de la
-  solución porque los proyectos referencian a sus hermanos (`JwtAuth`/`JwtAuthDatos` la
-  API, `JwtAuthImpl` el front).
+  solución porque los proyectos referencian a sus hermanos (`JwtAuth`/`JwtAuth.Data` la
+  API, `JwtAuth.Client` el front).
 - **Red interna:** dentro de Compose el front llama a la API por el **nombre del
   servicio** (`ApiBaseUrl=http://api:8080`), no por `localhost`. Los contenedores
   escuchan en el puerto `8080` (por defecto en la imagen `aspnet:10.0`) y se publican en
@@ -352,7 +369,7 @@ Content-Type: application/json
 { "refresh_token": "9f2c..." }
 ```
 
-> El archivo [`JwtAuthApi/JwtAuthApi.http`](JwtAuthApi/JwtAuthApi.http) contiene
+> El archivo [`JwtAuth.Api/JwtAuth.Api.http`](JwtAuth.Api/JwtAuth.Api.http) contiene
 > todas estas peticiones encadenadas, listas para ejecutar desde Visual Studio o VS Code.
 
 ---
@@ -390,7 +407,7 @@ sesiones del usuario. Esta lógica está en `AuthService.Refresh(...)`.
 
 ## Configuración
 
-La sección `Jwt` de [`JwtAuthApi/appsettings.json`](JwtAuthApi/appsettings.json)
+La sección `Jwt` de [`JwtAuth.Api/appsettings.json`](JwtAuth.Api/appsettings.json)
 controla el comportamiento de los tokens:
 
 ```json
@@ -423,12 +440,12 @@ Este proyecto es **educativo**. Antes de llevarlo a un entorno real, hay que ten
 - **Clave de firma:** nunca en `appsettings.json`. Usar variables de entorno o un
   *secret manager*, con una clave robusta de ≥32 bytes (sin ella la API no arranca fuera
   de `Development`).
-- **Persistencia:** los almacenes de `JwtAuthDatos` (`InMemoryUserStore`,
+- **Persistencia:** los almacenes de `JwtAuth.Data` (`InMemoryUserStore`,
   `InMemoryRefreshTokenStore`, `InMemoryProductStore`) guardan los datos en memoria, por
   lo que **se pierden al reiniciar** y no se comparten entre instancias. En producción se
   reemplazarían por una base de datos (p. ej. Entity Framework Core) implementando las
   mismas interfaces `IUserStore` / `IRefreshTokenStore` / `IProductStore`. Al estar
-  aislados en su propia capa, **solo cambia `JwtAuthDatos` y su `AddJwtAuthData()`**; el
+  aislados en su propia capa, **solo cambia `JwtAuth.Data` y su `AddJwtAuthData()`**; el
   resto de la solución no se entera.
 - **Transporte del refresh token:** para clientes web suele entregarse en una cookie
   `HttpOnly` + `Secure` en lugar del cuerpo JSON, para mitigar XSS.
@@ -442,8 +459,19 @@ Este proyecto es **educativo**. Antes de llevarlo a un entorno real, hay que ten
 - `Microsoft.IdentityModel.JsonWebTokens` (`JsonWebTokenHandler`: creación/validación de JWT)
 - `Microsoft.AspNetCore.Authentication.JwtBearer` (middleware de autenticación)
 - `Microsoft.AspNetCore.OpenApi` (OpenAPI nativo) + `Swashbuckle.AspNetCore.SwaggerUI` (visor)
-- NUnit 4, bUnit 2 y `Microsoft.AspNetCore.Mvc.Testing` (pruebas)
+- NUnit 5, bUnit 2 y `Microsoft.AspNetCore.Mvc.Testing` (pruebas)
 - Docker / Docker Compose (empaquetado y orquestación de la API y el front)
+
+## Puertos de los ejemplos JWT
+
+Los tres stacks de Docker Compose usan puertos distintos, así que se pueden levantar a la vez
+(por ejemplo, para probar la app Android contra cada API):
+
+| Ejemplo | API | Aplicación web |
+|---------|-----|----------------|
+| PHP | `8000` | `8001` |
+| Java | `8080` | `8081` |
+| .NET | `5274` | `5070` |
 
 ## Licencia
 

@@ -48,6 +48,11 @@ jobs:
       - name: Construir y levantar
         run: docker compose up --build --detach --wait --wait-timeout 300
 
+      # Recorre el flujo completo del contrato JWT (login, roles, rotación,
+      # detección de reuso, logout) contra la API en marcha.
+      - name: Prueba de humo del contrato (API en el puerto 5274)
+        run: bash scripts/smoke.sh http://localhost:5274
+
       - name: Logs de los contenedores
         if: failure()
         run: docker compose logs
