@@ -15,7 +15,7 @@ namespace JwtAuth.Extensions
     /// Esta extensión solo registra la lógica de validación/emisión (hasher,
     /// servicio de tokens y servicio de autenticación). Los almacenes de datos
     /// (usuarios, refresh tokens e intentos) los provee la capa de datos
-    /// mediante <c>AddJwtAuthData()</c> en el proyecto JwtAuthDatos.
+    /// mediante <c>AddJwtAuthData()</c> en el proyecto JwtAuth.Data.
     /// </remarks>
     public static class ServiceCollectionExtensions
     {

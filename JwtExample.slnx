@@ -1,10 +1,10 @@
 <Solution>
   <Project Path="JwtAuth/JwtAuth.csproj" />
-  <Project Path="JwtAuthApi/JwtAuthApi.csproj" />
-  <Project Path="JwtAuthApiTest/JwtAuthApiTest.csproj" />
-  <Project Path="JwtAuthDatos/JwtAuthDatos.csproj" />
-  <Project Path="JwtAuthImpl/JwtAuthImpl.csproj" />
-  <Project Path="JwtAuthImplFront/JwtAuthImplFront.csproj" />
-  <Project Path="JwtAuthImplTest/JwtAuthImplTest.csproj" />
-  <Project Path="JwtAuthTest/JwtAuthTest.csproj" />
+  <Project Path="JwtAuth.Api/JwtAuth.Api.csproj" />
+  <Project Path="JwtAuth.Api.Tests/JwtAuth.Api.Tests.csproj" />
+  <Project Path="JwtAuth.Data/JwtAuth.Data.csproj" />
+  <Project Path="JwtAuth.Client/JwtAuth.Client.csproj" />
+  <Project Path="JwtAuth.Web/JwtAuth.Web.csproj" />
+  <Project Path="JwtAuth.Client.Tests/JwtAuth.Client.Tests.csproj" />
+  <Project Path="JwtAuth.Tests/JwtAuth.Tests.csproj" />
 </Solution>

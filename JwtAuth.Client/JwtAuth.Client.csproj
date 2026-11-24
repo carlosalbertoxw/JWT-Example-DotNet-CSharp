@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    El cliente HTTP de la API usa tipos de ASP.NET Core Components
+    (AuthenticationStateProvider, ProtectedSessionStorage) y de la DI/HttpClient,
+    por lo que se referencia el framework compartido en vez de paquetes sueltos.
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+</Project>

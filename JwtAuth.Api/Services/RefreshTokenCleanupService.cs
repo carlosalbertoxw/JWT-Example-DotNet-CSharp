@@ -1,0 +1,56 @@
+using JwtAuth.Stores;
+
+namespace JwtAuth.Api.Services
+{
+    /// <summary>
+    /// Servicio en segundo plano que purga periódicamente los refresh tokens
+    /// expirados del almacén, evitando que crezca sin límite. La cadencia es
+    /// holgada (una vez por hora) porque la limpieza no es urgente.
+    /// </summary>
+    public class RefreshTokenCleanupService : BackgroundService
+    {
+        private static readonly TimeSpan Interval = TimeSpan.FromHours(1);
+
+        private readonly IRefreshTokenStore _store;
+        private readonly TimeProvider _time;
+        private readonly ILogger<RefreshTokenCleanupService> _logger;
+
+        public RefreshTokenCleanupService(
+            IRefreshTokenStore store,
+            TimeProvider time,
+            ILogger<RefreshTokenCleanupService> logger)
+        {
+            _store = store;
+            _time = time;
+            _logger = logger;
+        }
+
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        {
+            using var timer = new PeriodicTimer(Interval);
+
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                try
+                {
+                    int removed = _store.RemoveExpired(_time.GetUtcNow().UtcDateTime);
+                    if (removed > 0)
+                        _logger.LogInformation("Refresh tokens expirados purgados: {Count}.", removed);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error al purgar refresh tokens expirados.");
+                }
+
+                try
+                {
+                    await timer.WaitForNextTickAsync(stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break; // apagado normal de la aplicación
+                }
+            }
+        }
+    }
+}
